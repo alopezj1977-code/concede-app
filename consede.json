@@ -1,0 +1,59 @@
+{
+  "cliente": "CONSEDE",
+  "descripcion": "Motor de Demanda — Logística 3PL/4PL Agroindustrial, CPG y Retail",
+  "sectores": [
+    "Agroindustria", "CPG / Consumo", "Retail / Mayoristas", "Logística",
+    "Fertilizantes", "Automotriz", "Servicios profesionales",
+    "Comercio minorista local", "Otro"
+  ],
+  "sectores_afines": [
+    "Agroindustria", "CPG / Consumo", "Retail / Mayoristas", "Logística", "Fertilizantes"
+  ],
+  "regiones": {
+    "Bajío / Centro": ["CDMX", "Ciudad de Mexico", "Estado de México", "Mexico", "Querétaro", "Queretaro", "Guanajuato", "Aguascalientes", "Hidalgo"],
+    "Norte": ["Nuevo León", "Nuevo Leon", "Tamaulipas", "Coahuila"],
+    "Puertos estratégicos": ["Colima", "Veracruz", "Tabasco"]
+  },
+  "necesidades": [
+    "Almacenaje alto volumen", "Almacenaje de sacos / granel", "Transporte terrestre",
+    "Transporte ferroviario / intermodal", "Operación In-House",
+    "Kitting / picking / etiquetado / reenvasado", "Flete aislado", "Mudanza", "Mensajería"
+  ],
+  "necesidades_afines": [
+    "Almacenaje alto volumen", "Almacenaje de sacos / granel", "Transporte terrestre",
+    "Transporte ferroviario / intermodal", "Operación In-House",
+    "Kitting / picking / etiquetado / reenvasado"
+  ],
+  "marcas_excluir": [
+    "SABRITAS", "PEPSICO", "GAMESA", "BARCEL",
+    "GRUPO MODELO", "CERVEZAS MODELO", "CERVEZAS FINAS MODELO", "CERVECERIA MODELO",
+    "CUAUHTEMOC MOCTEZUMA", "AB INBEV",
+    "LALA", "ALPURA", "GRUPO LALA",
+    "BIMBO", "GRUPO BIMBO", "MARINELA",
+    "COCA-COLA", "COCA COLA", "FEMSA", "ARCA CONTINENTAL",
+    "JUMEX", "DANONE",
+    "WALMART", "BODEGA AURRERA", "SORIANA", "CHEDRAUI", "OXXO"
+  ],
+  "pesos_default": {"Sector": 7, "Tamaño": 5, "Geografía": 5, "Necesidad": 3},
+  "empleados_rango_default": [50, 500],
+  "sector_objetivo_default": "Agroindustria",
+  "umbral_aaa": 80,
+  "umbral_aa": 60,
+  "umbral_baja": 45,
+  "diagnostico_madurez": {
+    "titulo": "Prueba C (Datos): ¿Hay ceguera operativa?",
+    "objetivo": "Detectar si el empresario esta manejando a ciegas o si tiene un tablero de instrumentos moderno.",
+    "preguntas": [
+      {"texto": "¿Sabe exactamente qué producto/servicio le generó más utilidad (no venta) el mes pasado?", "peso": 0.30},
+      {"texto": "¿Tiene una base de datos de clientes propia, segmentada y con historial de recompra?", "peso": 0.25},
+      {"texto": "¿Puede predecir su flujo de caja de los próximos 3 meses basándose en tendencias históricas?", "peso": 0.25},
+      {"texto": "¿Recibe un reporte automático de anomalías (ventas bajas, mermas altas) en su celular?", "peso": 0.20}
+    ],
+    "escala": {"Totalmente de acuerdo": 5, "De acuerdo": 4, "Ni de acuerdo ni en desacuerdo": 3, "En desacuerdo": 2, "Totalmente en desacuerdo": 1},
+    "bandas": [
+      {"max": 2.0, "etiqueta": "Ceguera Total", "madurez": "Bajo", "detalle": "Maneja por intuición. Riesgo máximo de colapso ante el mercado."},
+      {"max": 3.5, "etiqueta": "Miopía Estratégica", "madurez": "Medio", "detalle": "Ve el pasado (contabilidad), pero no ve el futuro (predicción)."},
+      {"max": 5.01, "etiqueta": "Visión de Mando", "madurez": "Alto", "detalle": "Tiene un radar activo que le permite anticipar crisis."}
+    ]
+  }
+}
