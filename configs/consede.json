@@ -10,8 +10,8 @@
     "Agroindustria", "CPG / Consumo", "Retail / Mayoristas", "Logística", "Fertilizantes"
   ],
   "regiones": {
-    "Bajío / Centro": ["CDMX", "Ciudad de Mexico", "Estado de México", "Mexico", "Querétaro", "Queretaro", "Guanajuato", "Aguascalientes", "Hidalgo"],
-    "Norte": ["Nuevo León", "Nuevo Leon", "Tamaulipas", "Coahuila"],
+    "Bajío / Centro": ["Ciudad de México", "Estado de México", "Querétaro", "Guanajuato", "Aguascalientes", "Hidalgo"],
+    "Norte": ["Nuevo León", "Tamaulipas", "Coahuila"],
     "Puertos estratégicos": ["Colima", "Veracruz", "Tabasco"]
   },
   "necesidades": [
