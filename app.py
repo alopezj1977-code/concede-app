@@ -47,6 +47,32 @@ def _normaliza(texto):
     return "".join(c for c in unicodedata.normalize("NFD", texto) if unicodedata.category(c) != "Mn")
 
 
+# El INEGI nombra a varios estados con su sufijo oficial completo en el DENUE
+# (ej. "Coahuila de Zaragoza", "Veracruz de Ignacio de la Llave"), no con el
+# nombre corto que usa la gente. Esta tabla traduce el nombre "humano" que
+# elige el usuario en el menu a todas las variantes reales que puede traer
+# el DENUE, para que el filtro de geografia no falle en silencio.
+ALIAS_ESTADOS = {
+    "CIUDAD DE MEXICO": ["CIUDAD DE MEXICO", "DISTRITO FEDERAL", "CDMX"],
+    "ESTADO DE MEXICO": ["MEXICO", "ESTADO DE MEXICO"],
+    "COAHUILA": ["COAHUILA", "COAHUILA DE ZARAGOZA"],
+    "VERACRUZ": ["VERACRUZ", "VERACRUZ DE IGNACIO DE LA LLAVE"],
+    "MICHOACAN": ["MICHOACAN", "MICHOACAN DE OCAMPO"],
+}
+
+
+def estado_coincide(estado_dato, estados_objetivo):
+    """Compara el estado de una empresa contra la lista de estados objetivo,
+    usando la tabla de alias para nombres oficiales largos del DENUE."""
+    dato_norm = _normaliza(estado_dato)
+    for objetivo in estados_objetivo:
+        obj_norm = _normaliza(objetivo)
+        variantes = ALIAS_ESTADOS.get(obj_norm, [obj_norm])
+        if any(_normaliza(v) == dato_norm for v in variantes):
+            return True
+    return False
+
+
 CONFIGS = cargar_configs()
 if not CONFIGS:
     st.error(
@@ -160,7 +186,7 @@ def score_row(r, target, weights):
         size = max(35, 100 - min(abs(emp - target["empleados_max"]), abs(emp - target["empleados_min"])) / max(target["empleados_max"], 1) * 55)
     else:
         size = 0
-    geo = 100 if r["Estado"] in target["estados"] else 0
+    geo = 100 if estado_coincide(r["Estado"], target["estados"]) else 0
     need = 100 if r["Necesidad"] in NECESIDADES_AFINES else (50 if r["Necesidad"] == "" else 0)
     denom = sum(weights.values()) or 1
     return round((sector * weights["Sector"] + size * weights["Tamaño"] + geo * weights["Geografía"] + need * weights["Necesidad"]) / denom, 1)
