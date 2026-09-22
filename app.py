@@ -158,13 +158,31 @@ def _parsea_empleados(valor):
 
 def clasifica_sector_denue(rama_texto):
     """Aproxima el Sector (categoria de la matriz) a partir del texto libre de
-    actividad economica del DENUE, usando los sectores afines del cliente."""
+    actividad economica del DENUE. Usa exactamente las mismas palabras clave
+    que el motor_calificacion.py original (el que produjo el resultado de
+    referencia de 714 cuentas AAA/A en Guanajuato), para que ambas
+    herramientas sean consistentes entre si."""
     t = _normaliza(rama_texto)
+    # Descalificadores primero -- igual que en motor_calificacion.py: utilities,
+    # construccion de infraestructura y restaurantes NO son clientes de Consede,
+    # aunque el texto contenga palabras como "alimento" o "distribucion".
+    descalificadores = [
+        "DISTRIBUCION DE ENERGIA", "DISTRIBUCION DE AGUA", "CONSTRUCCION DE OBRAS",
+        "TRATAMIENTO DE AGUAS", "SUBESTACION", "SISTEMAS DE RIEGO", "PERFORACIONES",
+        "OBRAS PARA EL TRATAMIENTO", "RESTAURANTE", "PREPARACION DE ALIMENTOS PARA CONSUMO",
+        "SERVICIOS DE PREPARACION DE ALIMENTOS", "CAFETERIA", "COMEDOR",
+    ]
+    for kw in descalificadores:
+        if kw in t:
+            return "Otro"
     mapa = {
         "Agroindustria": ["AZUCAR", "INGENIO", "GRANO", "FERTILIZANTE", "AGROINDUSTR", "SEMILLA", "AGRICOLA"],
-        "CPG / Consumo": ["ALIMENTO", "BEBIDA", "CONSUMO", "HIGIENE", "PAPEL", "COSMETIC"],
-        "Retail / Mayoristas": ["COMERCIO AL POR MAYOR", "MAYORISTA", "ABASTO", "DISTRIBUCION DE ALIMENTOS", "DISTRIBUCION COMERCIAL"],
-        "Logística": ["AUTOTRANSPORTE", "TRANSPORTE DE CARGA", "ALMACENAMIENTO", "ALMACEN GENERAL", "LOGISTIC", "AGENCIA ADUANAL", "FLETE", "FORWARDER"],
+        "CPG / Consumo": ["ALIMENTO", "BEBIDA", "CONSUMO", "PRODUCTOS DE ASEO", "HIGIENE", "PAPEL", "COSMETIC"],
+        "Retail / Mayoristas": ["COMERCIO AL POR MAYOR", "MAYORISTA", "DISTRIBUCION DE ALIMENTOS",
+                                 "DISTRIBUCION COMERCIAL", "DISTRIBUCION DE MERCANCIAS",
+                                 "DISTRIBUCION DE PRODUCTOS", "CENTRAL DE ABASTO"],
+        "Logística": ["AUTOTRANSPORTE", "TRANSPORTE DE CARGA", "ALMACENAMIENTO", "ALMACEN GENERAL",
+                       "LOGISTIC", "AGENCIA ADUANAL", "TRANSPORTE FERROVIARIO", "FLETE", "FORWARDER"],
         "Fertilizantes": ["FERTILIZANTE"],
         "Servicios profesionales": ["SERVICIOS PROFESIONALES", "CONSULTORIA", "DESPACHO", "ASESORIA"],
         "Comercio minorista local": ["COMERCIO AL POR MENOR", "TIENDA DE ABARROTES", "MINISUPER"],
@@ -178,12 +196,25 @@ def clasifica_sector_denue(rama_texto):
 
 # --------------------------- Scoring ---------------------------
 def score_row(r, target, weights):
-    sector = 100 if r["Sector"] == target["sector"] else (60 if r["Sector"] in SECTORES_AFINES else 0)
+    # Cualquier sector afin al giro de Consede vale el 100% del criterio de
+    # Sector (asi corrio el analisis original de 714 cuentas AAA en Guanajuato).
+    # El "Sector objetivo" del menu es un resaltado/foco de busqueda, no un
+    # filtro que descarte a los demas sectores afines.
+    if r["Sector"] in SECTORES_AFINES:
+        sector = 100
+    elif r["Sector"] == target["sector"]:
+        sector = 100
+    else:
+        sector = 0
     emp = float(r["Empleados"])
-    if target["empleados_min"] <= emp <= target["empleados_max"]:
+    # La matriz original dice "50 a 500+ empleados": sin techo. Una empresa
+    # con mas del maximo del slider sigue siendo tan valida como una en el
+    # rango exacto -- no se le resta por ser grande. Solo se penaliza estar
+    # por debajo del minimo (empresa demasiado chica para necesitar 3PL).
+    if emp >= target["empleados_min"]:
         size = 100
-    elif emp >= 50:
-        size = max(35, 100 - min(abs(emp - target["empleados_max"]), abs(emp - target["empleados_min"])) / max(target["empleados_max"], 1) * 55)
+    elif emp >= 20:
+        size = int(100 * (emp - 20) / max(target["empleados_min"] - 20, 1))
     else:
         size = 0
     geo = 100 if estado_coincide(r["Estado"], target["estados"]) else 0
