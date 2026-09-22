@@ -250,7 +250,14 @@ if st.session_state.get("_fuente") != fuente_actual:
     st.session_state["_fuente"] = fuente_actual
     if uploaded:
         try:
-            df_crudo = pd.read_csv(uploaded) if uploaded.name.lower().endswith(".csv") else pd.read_excel(uploaded)
+            if uploaded.name.lower().endswith(".csv"):
+                try:
+                    df_crudo = pd.read_csv(uploaded, encoding="utf-8")
+                except UnicodeDecodeError:
+                    uploaded.seek(0)
+                    df_crudo = pd.read_csv(uploaded, encoding="latin-1")
+            else:
+                df_crudo = pd.read_excel(uploaded)
             if es_denue(df_crudo.columns):
                 st.sidebar.info("Formato DENUE detectado — mapeando Empresa, Sector, Empleados y Estado automáticamente.")
                 data = mapea_denue(df_crudo)
