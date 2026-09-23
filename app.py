@@ -381,7 +381,7 @@ with left:
     fig.add_vline(x=CFG["umbral_aaa"], line_dash="dash", annotation_text=f"Umbral AAA ({CFG['umbral_aaa']}%)")
     fig.add_vline(x=CFG["umbral_aa"], line_dash="dot", annotation_text=f"Umbral AA ({CFG['umbral_aa']}%)")
     fig.update_layout(height=480, xaxis_title="Match Score (%)", yaxis_title="Valor potencial estimado (MXN)")
-    st.plotly_chart(fig, use_container_width=True)
+    st.plotly_chart(fig, width='stretch')
 with right:
     st.markdown("**Lectura de cuadrantes**")
     st.markdown("- **Alineación total:** score alto y necesidad logística pertinente.")
@@ -401,7 +401,7 @@ with c2:
 with c3:
     estado_sel = st.multiselect("Estado", sorted(data["Estado"].unique()), default=sorted(data["Estado"].unique()))
 view = data[data["Clasificación"].isin(clas_sel) & (data["Match Score"] >= min_score) & data["Estado"].isin(estado_sel)].copy()
-st.dataframe(view, use_container_width=True, hide_index=True)
+st.dataframe(view, width='stretch', hide_index=True)
 
 csv = view.to_csv(index=False).encode("utf-8-sig")
 st.download_button("⬇️ Descargar resultados CSV", data=csv, file_name=f"{cliente_sel}_cuentas_priorizadas.csv", mime="text/csv")
