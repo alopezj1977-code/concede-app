@@ -29,6 +29,8 @@ st.markdown("""
 
 CONFIG_DIR = os.path.join(os.path.dirname(__file__), "configs")
 
+# Columnas clave para la optimizacion extrema de memoria con bases del DENUE (RAM)
+COLS_DENUE = ["nom_estab", "raz_social", "nombre_act", "per_ocu", "entidad"]
 
 # --------------------------- Carga de configuraciones por cliente ---------------------------
 def cargar_configs():
@@ -47,11 +49,6 @@ def _normaliza(texto):
     return "".join(c for c in unicodedata.normalize("NFD", texto) if unicodedata.category(c) != "Mn")
 
 
-# El INEGI nombra a varios estados con su sufijo oficial completo en el DENUE
-# (ej. "Coahuila de Zaragoza", "Veracruz de Ignacio de la Llave"), no con el
-# nombre corto que usa la gente. Esta tabla traduce el nombre "humano" que
-# elige el usuario en el menu a todas las variantes reales que puede traer
-# el DENUE, para que el filtro de geografia no falle en silencio.
 ALIAS_ESTADOS = {
     "CIUDAD DE MEXICO": ["CIUDAD DE MEXICO", "DISTRITO FEDERAL", "CDMX"],
     "ESTADO DE MEXICO": ["MEXICO", "ESTADO DE MEXICO"],
@@ -158,14 +155,8 @@ def _parsea_empleados(valor):
 
 def clasifica_sector_denue(rama_texto):
     """Aproxima el Sector (categoria de la matriz) a partir del texto libre de
-    actividad economica del DENUE. Usa exactamente las mismas palabras clave
-    que el motor_calificacion.py original (el que produjo el resultado de
-    referencia de 714 cuentas AAA/A en Guanajuato), para que ambas
-    herramientas sean consistentes entre si."""
+    actividad economica del DENUE."""
     t = _normaliza(rama_texto)
-    # Descalificadores primero -- igual que en motor_calificacion.py: utilities,
-    # construccion de infraestructura y restaurantes NO son clientes de Consede,
-    # aunque el texto contenga palabras como "alimento" o "distribucion".
     descalificadores = [
         "DISTRIBUCION DE ENERGIA", "DISTRIBUCION DE AGUA", "CONSTRUCCION DE OBRAS",
         "TRATAMIENTO DE AGUAS", "SUBESTACION", "SISTEMAS DE RIEGO", "PERFORACIONES",
@@ -196,10 +187,6 @@ def clasifica_sector_denue(rama_texto):
 
 # --------------------------- Scoring ---------------------------
 def score_row(r, target, weights):
-    # Cualquier sector afin al giro de Consede vale el 100% del criterio de
-    # Sector (asi corrio el analisis original de 714 cuentas AAA en Guanajuato).
-    # El "Sector objetivo" del menu es un resaltado/foco de busqueda, no un
-    # filtro que descarte a los demas sectores afines.
     if r["Sector"] in SECTORES_AFINES:
         sector = 100
     elif r["Sector"] == target["sector"]:
@@ -207,10 +194,6 @@ def score_row(r, target, weights):
     else:
         sector = 0
     emp = float(r["Empleados"])
-    # La matriz original dice "50 a 500+ empleados": sin techo. Una empresa
-    # con mas del maximo del slider sigue siendo tan valida como una en el
-    # rango exacto -- no se le resta por ser grande. Solo se penaliza estar
-    # por debajo del minimo (empresa demasiado chica para necesitar 3PL).
     if emp >= target["empleados_min"]:
         size = 100
     elif emp >= 20:
@@ -248,8 +231,8 @@ sector_obj = st.sidebar.selectbox("Sector / industria objetivo", SECTORES, index
 emp_min, emp_max = st.sidebar.slider("Rango de empleados", 1, 5000, tuple(CFG["empleados_rango_default"]), step=10)
 estados_obj = st.sidebar.multiselect("Estados / corredores objetivo", ZONAS, default=ZONAS)
 presupuesto = st.sidebar.number_input(
-    "Ticket promedio por cuenta cerrada (MXN)", min_value=0, value=1000000, step=50000,
-    help="Tú lo capturas con base en el historial real de contratos. No se calcula de ninguna base de datos."
+    "Ticket promedio por cuenta cerrada (MXN)", min_value=0, value=69600, step=5000,
+    help="Valor unitario/contrato estimado por cuenta AAA. (Ej. $69,600 MXN para fletes/servicios unitarios)."
 )
 
 st.sidebar.markdown("---")
@@ -261,7 +244,6 @@ w_geo = st.sidebar.slider("Geografía / rutas", 1, 10, pd_["Geografía"])
 w_nec = st.sidebar.slider("Requerimiento operativo", 1, 10, pd_["Necesidad"])
 weights = {"Sector": w_sector, "Tamaño": w_tamano, "Geografía": w_geo, "Necesidad": w_nec}
 
-# --- Normalizacion VISIBLE: se muestra el % real que representa cada peso ---
 suma_pesos = sum(weights.values()) or 1
 st.sidebar.markdown(
     "".join(
@@ -275,20 +257,22 @@ st.sidebar.caption("Los pesos se normalizan automáticamente para sumar 100%, si
 st.sidebar.markdown("---")
 uploaded = st.sidebar.file_uploader("Cargar cartera real (CSV o Excel)", type=["csv", "xlsx"])
 
-# --------------------------- Estado de sesión (para poder editar Madurez luego) ---------------------------
+# --------------------------- Estado de sesión ---------------------------
 fuente_actual = uploaded.name if uploaded else f"DEMO::{cliente_sel}"
 if st.session_state.get("_fuente") != fuente_actual:
     st.session_state["_fuente"] = fuente_actual
     if uploaded:
         try:
             if uploaded.name.lower().endswith(".csv"):
+                # Carga optimizada usando usecols para limitar el consumo de RAM
                 try:
-                    df_crudo = pd.read_csv(uploaded, encoding="utf-8")
-                except UnicodeDecodeError:
+                    df_crudo = pd.read_csv(uploaded, usecols=lambda c: c.strip().lower() in COLS_DENUE or c in ["Empresa", "Sector", "Empleados", "Estado"], encoding="utf-8")
+                except Exception:
                     uploaded.seek(0)
-                    df_crudo = pd.read_csv(uploaded, encoding="latin-1")
+                    df_crudo = pd.read_csv(uploaded, usecols=lambda c: c.strip().lower() in COLS_DENUE or c in ["Empresa", "Sector", "Empleados", "Estado"], encoding="latin-1")
             else:
                 df_crudo = pd.read_excel(uploaded)
+            
             if es_denue(df_crudo.columns):
                 st.sidebar.info("Formato DENUE detectado — mapeando Empresa, Sector, Empleados y Estado automáticamente.")
                 data = mapea_denue(df_crudo)
@@ -297,8 +281,7 @@ if st.session_state.get("_fuente") != fuente_actual:
                 excluidas = data["Empresa"].apply(es_marca_excluida)
                 n_excl = excluidas.notna().sum()
                 data = data[excluidas.isna()].reset_index(drop=True)
-                st.sidebar.success(f"{len(data):,} registros cargados. {n_excl:,} excluidos por ser marcas con flotilla/almacenes propios conocidos.")
-                st.sidebar.warning("Madurez y Necesidad quedaron 'Por confirmar' / vacías — el DENUE no las tiene. Complétalas con el Diagnóstico de Madurez o en la llamada de Chema.")
+                st.sidebar.success(f"{len(data):,} registros cargados. {n_excl:,} excluidos por marcas con flota propia.")
             else:
                 required = {"Empresa", "Sector", "Empleados", "Estado"}
                 missing = required - set(df_crudo.columns)
@@ -346,9 +329,9 @@ f1.metric("Match Score promedio", f"{data['Match Score'].mean():.1f}%")
 n_aaa = (data["Prioridad"] == "AAA").sum()
 f2.metric("Cuentas AAA", f"{n_aaa:,}")
 pipeline_estimado = n_aaa * presupuesto
-f3.metric("Pipeline potencial estimado", f"${pipeline_estimado:,.0f} MXN", help="Cuentas AAA × ticket promedio capturado arriba. No es un valor observado por cuenta.")
+f3.metric("Pipeline potencial estimado", f"${pipeline_estimado:,.0f} MXN", help="Cuentas AAA × ticket promedio capturado arriba.")
 
-# --------------------------- Diagnóstico de Madurez (manual, batería real) ---------------------------
+# --------------------------- Diagnóstico de Madurez ---------------------------
 if DIAG:
     with st.expander("🧪 Diagnóstico de Madurez — " + DIAG["titulo"]):
         st.caption(DIAG["objetivo"])
@@ -389,8 +372,6 @@ with right:
     st.markdown("- **Baja alineación:** score bajo.")
     st.markdown("- **Oportunista:** resto; validar antes de priorizar.")
     st.caption("Clasificación operativa ilustrativa; no equivale a oportunidad confirmada.")
-    if "Valor potencial MXN" in data.columns and (data["Valor potencial MXN"] == 0).all():
-        st.caption("⚠️ 'Valor potencial MXN' está en 0 para todos — viene de datos reales del DENUE, que no incluye esta cifra. El eje Y no es informativo hasta que se capture manualmente.")
 
 st.markdown("### Tabla dinámica de cuentas")
 c1, c2, c3 = st.columns(3)
@@ -401,6 +382,7 @@ with c2:
 with c3:
     estado_sel = st.multiselect("Estado", sorted(data["Estado"].unique()), default=sorted(data["Estado"].unique()))
 view = data[data["Clasificación"].isin(clas_sel) & (data["Match Score"] >= min_score) & data["Estado"].isin(estado_sel)].copy()
+
 st.dataframe(view, width='stretch', hide_index=True)
 
 csv = view.to_csv(index=False).encode("utf-8-sig")
@@ -413,13 +395,10 @@ st.download_button("⬇️ Descargar resultados Excel", data=excel_buffer.getval
 
 with st.expander("Reglas del juego y limitaciones"):
     st.markdown(f"""
-    - Matriz activa: **{cliente_sel}**, cargada desde `configs/{cliente_sel.lower()}.json` (o el archivo correspondiente).
-    - Pesos iniciales de esa matriz: Sector {pd_['Sector']}, Tamaño {pd_['Tamaño']}, Geografía {pd_['Geografía']}, Necesidad {pd_['Necesidad']} — se normalizan siempre a 100%, muévelos como quieras.
-    - Al subir un CSV crudo del DENUE, Sector/Empleados/Estado se mapean solos; Madurez y Necesidad quedan pendientes de confirmar (no existen en esa fuente).
-    - Se excluyen automáticamente marcas con flotilla/almacenes propios conocidos (lista en el archivo de configuración del cliente).
-    - El Diagnóstico de Madurez usa la batería real de preguntas — no es un estimado inventado, pero sí requiere que alguien la conteste por cada empresa.
-    - El ticket promedio y el pipeline estimado son una referencia capturada por el usuario, no evidencia de capacidad de compra de una cuenta.
-    - Antes de producción: validar pesos y reglas con Chema, documentar campos y conectar la base real con fuente/fecha.
+    - Matriz activa: **{cliente_sel}**, cargada desde `configs/{cliente_sel.lower()}.json`.
+    - Pesos iniciales: Sector {pd_['Sector']}, Tamaño {pd_['Tamaño']}, Geografía {pd_['Geografía']}, Necesidad {pd_['Necesidad']} — normalizados a 100%.
+    - Carga optimizada para DENUE: extrae columnas clave para minimizar uso de memoria RAM.
+    - Se excluyen automáticamente marcas con flotilla/almacenes propios conocidos.
     """)
 
 st.markdown('<div class="small-note">4MSFTS · Menos es más · Evidencia antes de tecnología</div>', unsafe_allow_html=True)
