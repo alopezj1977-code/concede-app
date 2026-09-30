@@ -169,8 +169,6 @@ st.sidebar.markdown("---")
 
 SECTORES = CFG["sectores"]
 SECTORES_AFINES = set(CFG.get("sectores_afines", []))
-REGIONES = CFG["regiones"]
-ZONAS = sum(REGIONES.values(), [])
 NECESIDADES = CFG["necesidades"]
 NECESIDADES_AFINES = set(CFG.get("necesidades_afines", []))
 MARCAS_EXCLUIR = CFG.get("marcas_excluir", [])
@@ -315,7 +313,7 @@ idx_sector = SECTORES.index(CFG["sector_objetivo_default"]) if CFG["sector_objet
 sector_obj = st.sidebar.selectbox("Sector / industria objetivo", SECTORES, index=idx_sector)
 emp_min, emp_max = st.sidebar.slider("Rango de empleados", 1, 5000, tuple(CFG["empleados_rango_default"]), step=10)
 
-# P0.2 - Selector Geográfico con Catálogo Nacional de 32 Entidades + TODAS
+# P0.2 - Selector Geográfico Objetivo (Catálogo Oficial Nacional de 32 Entidades + TODAS)
 estados_obj = st.sidebar.multiselect(
     "Estados / corredores objetivo", 
     CATALOGO_ENTIDADES_MEXICO, 
@@ -480,7 +478,10 @@ with c1:
 with c2:
     min_score = st.slider("Match mínimo", 0, 100, 0)
 with c3:
-    estado_sel = st.multiselect("Estado", sorted(data["Estado"].unique()), default=sorted(data["Estado"].unique()))
+    # Filtro dinámico de la tabla vista (basado únicamente en los estados presentes en el DataFrame activo)
+    estados_presentes = sorted([e for e in data["Estado"].unique() if str(e).strip() != ""])
+    estado_sel = st.multiselect("Estado (Filtro Vista)", estados_presentes, default=estados_presentes)
+
 view = data[data["Clasificación"].isin(clas_sel) & (data["Match Score"] >= min_score) & data["Estado"].isin(estado_sel)].copy()
 
 st.dataframe(view, width='stretch', hide_index=True)
