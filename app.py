@@ -85,6 +85,34 @@ def calcular_score_tamano_p01(val_or_text, target_min: int, target_max: int) -> 
         score = max(0.0, 100.0 * (1.0 - ratio))
         return round(score, 1), False, "SOBRE_ESCALA"
 
+# ==============================================================================
+# P0.2 - NÚCLEO DE COBERTURA GEOGRÁFICA (32 ENTIDADES + TODAS)
+# ==============================================================================
+CATALOGO_ENTIDADES_MEXICO = [
+    "TODAS LAS ENTIDADES",
+    "Aguascalientes", "Baja California", "Baja California Sur", "Campeche", 
+    "Chiapas", "Chihuahua", "Ciudad de México", "Coahuila", "Colima", 
+    "Durango", "Estado de México", "Guanajuato", "Guerrero", "Hidalgo", 
+    "Jalisco", "Michoacán", "Morelos", "Nayarit", "Nuevo León", 
+    "Oaxaca", "Puebla", "Querétaro", "Quintana Roo", "San Luis Potosí", 
+    "Sinaloa", "Sonora", "Tabasco", "Tamaulipas", "Tlaxcala", 
+    "Veracruz", "Yucatán", "Zacatecas"
+]
+
+def calcular_score_geografia_p02(estado_empresa: str, estados_seleccionados: list) -> Tuple[float, str]:
+    """
+    Función pura P0.2 para evaluación geográfica.
+    Retorna: (geo_score, estatus_geo)
+    """
+    if "TODAS LAS ENTIDADES" in estados_seleccionados or not estados_seleccionados:
+        # Criterio Neutral: No discrimina por territorio en esta corrida
+        return 100.0, "GEO_NEUTRAL"
+    
+    if estado_coincide(estado_empresa, estados_seleccionados):
+        return 100.0, "COINCIDENCIA_GEOGRAFICA"
+    else:
+        return 0.0, "FUERA_DE_CORREDOR"
+
 # --------------------------- Carga de configuraciones por cliente ---------------------------
 def cargar_configs():
     configs = {}
@@ -238,7 +266,7 @@ def clasifica_sector_denue(rama_texto):
     return "Otro"
 
 
-# --------------------------- Scoring P0.1 ---------------------------
+# --------------------------- Scoring P0.1 y P0.2 ---------------------------
 def score_row(r, target, weights):
     if r["Sector"] in SECTORES_AFINES:
         sector = 100
@@ -248,17 +276,19 @@ def score_row(r, target, weights):
         sector = 0
 
     # Integración Quirúrgica P0.1: Sensibilidad de tamaño
-    size_score, flag_techo, estatus = calcular_score_tamano_p01(
+    size_score, flag_techo, estatus_tam = calcular_score_tamano_p01(
         r["Empleados"], 
         target.get("empleados_min", 50), 
         target.get("empleados_max", 250)
     )
     size_val = size_score if size_score is not None else 0.0
 
-    geo = 100 if estado_coincide(r["Estado"], target["estados"]) else 0
+    # Integración Quirúrgica P0.2: Evaluacion geográfica
+    geo_val, estatus_geo = calcular_score_geografia_p02(r["Estado"], target.get("estados", []))
+
     need = 100 if r["Necesidad"] in NECESIDADES_AFINES else (50 if r["Necesidad"] == "" else 0)
     denom = sum(weights.values()) or 1
-    return round((sector * weights["Sector"] + size_val * weights["Tamaño"] + geo * weights["Geografía"] + need * weights["Necesidad"]) / denom, 1)
+    return round((sector * weights["Sector"] + size_val * weights["Tamaño"] + geo_val * weights["Geografía"] + need * weights["Necesidad"]) / denom, 1)
 
 
 def es_marca_excluida(nombre_empresa):
@@ -284,7 +314,14 @@ st.sidebar.caption("Ajusta el perfil objetivo y los pesos. Cambios recalculan el
 idx_sector = SECTORES.index(CFG["sector_objetivo_default"]) if CFG["sector_objetivo_default"] in SECTORES else 0
 sector_obj = st.sidebar.selectbox("Sector / industria objetivo", SECTORES, index=idx_sector)
 emp_min, emp_max = st.sidebar.slider("Rango de empleados", 1, 5000, tuple(CFG["empleados_rango_default"]), step=10)
-estados_obj = st.sidebar.multiselect("Estados / corredores objetivo", ZONAS, default=ZONAS)
+
+# P0.2 - Selector Geográfico con Catálogo Nacional de 32 Entidades + TODAS
+estados_obj = st.sidebar.multiselect(
+    "Estados / corredores objetivo", 
+    CATALOGO_ENTIDADES_MEXICO, 
+    default=["Guanajuato"]
+)
+
 presupuesto = st.sidebar.number_input(
     "Ticket promedio por cuenta cerrada (MXN)", min_value=0, value=69600, step=5000,
     help="Valor unitario/contrato estimado por cuenta AAA. (Ej. $69,600 MXN para fletes/servicios unitarios)."
@@ -372,6 +409,10 @@ res_p01 = data["Empleados"].apply(lambda e: calcular_score_tamano_p01(e, emp_min
 data["Flag_Techo_DENUE"] = [r[1] for r in res_p01]
 data["Estatus_Tamaño"] = [r[2] for r in res_p01]
 
+# Banderas P0.2 informativas en el DataFrame
+res_p02 = data["Estado"].apply(lambda e: calcular_score_geografia_p02(e, estados_obj))
+data["Estatus_Geografía"] = [r[1] for r in res_p02]
+
 data["Clasificación"] = data.apply(classify, axis=1)
 data["Prioridad"] = np.select([data["Match Score"] >= CFG["umbral_aaa"], data["Match Score"] >= CFG["umbral_aa"]], ["AAA", "AA"], default="Validar")
 data = data.sort_values("Match Score", ascending=False).reset_index(drop=True)
@@ -418,7 +459,7 @@ left, right = st.columns([3, 1])
 with left:
     fig = px.scatter(data, x="Match Score", y="Valor potencial MXN", color="Clasificación",
                       size="Empleados", hover_name="Empresa",
-                      hover_data=["Sector", "Estado", "Empleados", "Madurez", "Necesidad", "Prioridad", "Estatus_Tamaño"],
+                      hover_data=["Sector", "Estado", "Empleados", "Madurez", "Necesidad", "Prioridad", "Estatus_Tamaño", "Estatus_Geografía"],
                       range_x=[0, 100], title="Afinidad vs. valor potencial")
     fig.add_vline(x=CFG["umbral_aaa"], line_dash="dash", annotation_text=f"Umbral AAA ({CFG['umbral_aaa']}%)")
     fig.add_vline(x=CFG["umbral_aa"], line_dash="dot", annotation_text=f"Umbral AA ({CFG['umbral_aa']}%)")
