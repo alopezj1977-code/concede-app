@@ -169,8 +169,6 @@ st.sidebar.markdown("---")
 
 SECTORES = CFG["sectores"]
 SECTORES_AFINES = set(CFG.get("sectores_afines", []))
-REGIONES = CFG["regiones"]
-ZONAS = sum(REGIONES.values(), [])
 NECESIDADES = CFG["necesidades"]
 NECESIDADES_AFINES = set(CFG.get("necesidades_afines", []))
 MARCAS_EXCLUIR = CFG.get("marcas_excluir", [])
@@ -315,7 +313,7 @@ idx_sector = SECTORES.index(CFG["sector_objetivo_default"]) if CFG["sector_objet
 sector_obj = st.sidebar.selectbox("Sector / industria objetivo", SECTORES, index=idx_sector)
 emp_min, emp_max = st.sidebar.slider("Rango de empleados", 1, 5000, tuple(CFG["empleados_rango_default"]), step=10)
 
-# P0.2 CORREGIDO: Usar CATALOGO_ENTIDADES_MEXICO en lugar de ZONAS
+# P0.2 - Selector Geográfico Objetivo (Catálogo Oficial Nacional de 32 Entidades + TODAS)
 estados_obj = st.sidebar.multiselect(
     "Estados / corredores objetivo", 
     CATALOGO_ENTIDADES_MEXICO, 
@@ -455,12 +453,23 @@ if DIAG:
             st.rerun()
 
 st.markdown("### Matriz de oportunidades")
+
+# HOTFIX P0.2-H1: Columna numérica auxiliar exclusivamente para renderizado de Plotly
+data["Empleados_Num"] = data["Empleados"].apply(_parsea_empleados)
+
 left, right = st.columns([3, 1])
 with left:
-    fig = px.scatter(data, x="Match Score", y="Valor potencial MXN", color="Clasificación",
-                      size="Empleados", hover_name="Empresa",
-                      hover_data=["Sector", "Estado", "Empleados", "Madurez", "Necesidad", "Prioridad", "Estatus_Tamaño", "Estatus_Geografía"],
-                      range_x=[0, 100], title="Afinidad vs. valor potencial")
+    fig = px.scatter(
+        data, 
+        x="Match Score", 
+        y="Valor potencial MXN", 
+        color="Clasificación",
+        size="Empleados_Num",  # <--- HOTFIX P0.2-H1: Uso seguro para tamaño de burbuja
+        hover_name="Empresa",
+        hover_data=["Sector", "Estado", "Empleados", "Madurez", "Necesidad", "Prioridad", "Estatus_Tamaño", "Estatus_Geografía"],
+        range_x=[0, 100], 
+        title="Afinidad vs. valor potencial"
+    )
     fig.add_vline(x=CFG["umbral_aaa"], line_dash="dash", annotation_text=f"Umbral AAA ({CFG['umbral_aaa']}%)")
     fig.add_vline(x=CFG["umbral_aa"], line_dash="dot", annotation_text=f"Umbral AA ({CFG['umbral_aa']}%)")
     fig.update_layout(height=480, xaxis_title="Match Score (%)", yaxis_title="Valor potencial estimado (MXN)")
@@ -496,7 +505,7 @@ with pd.ExcelWriter(excel_buffer, engine="openpyxl") as writer:
 st.download_button("⬇️ Descargar resultados Excel", data=excel_buffer.getvalue(), file_name=f"{cliente_sel}_cuentas_priorizadas.xlsx",
                     mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
 
-with st.expander("Reglas del juego y limitaciones"):
+with st.expander("Reglas del juego y limitations"):
     st.markdown(f"""
     - Matriz activa: **{cliente_sel}**, cargada desde `configs/{cliente_sel.lower()}.json`.
     - Pesos iniciales: Sector {pd_['Sector']}, Tamaño {pd_['Tamaño']}, Geografía {pd_['Geografía']}, Necesidad {pd_['Necesidad']} — normalizados a 100%.
