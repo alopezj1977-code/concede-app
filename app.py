@@ -9,6 +9,7 @@ import json
 import glob
 import os
 import unicodedata
+from typing import Tuple, Optional
 
 import numpy as np
 import pandas as pd
@@ -31,6 +32,58 @@ CONFIG_DIR = os.path.join(os.path.dirname(__file__), "configs")
 
 # Columnas clave para la optimizacion extrema de memoria con bases del DENUE (RAM)
 COLS_DENUE = ["nom_estab", "raz_social", "nombre_act", "per_ocu", "entidad"]
+
+# ==============================================================================
+# P0.1 - NÚCLEO DE SENSIBILIDAD DE TAMAÑO (DENUE)
+# ==============================================================================
+MAPEO_DENUE_EXACTO = {
+    '0 a 5 personas': 3,
+    '6 a 10 personas': 8,
+    '11 a 30 personas': 20,
+    '31 a 50 personas': 40,
+    '51 a 100 personas': 75,
+    '101 a 250 personas': 175,
+    '251 y más personas': 251
+}
+
+def obtener_valor_representativo(texto_per_ocu: str) -> Optional[int]:
+    """Devuelve el valor representativo o None si el texto no es reconocido/NaN."""
+    if pd.isna(texto_per_ocu) or not isinstance(texto_per_ocu, str):
+        return None
+    return MAPEO_DENUE_EXACTO.get(str(texto_per_ocu).strip(), None)
+
+def calcular_score_tamano_p01(val_or_text, target_min: int, target_max: int) -> Tuple[Optional[float], bool, str]:
+    """Calcula la afinidad de tamaño sensible a min y max (P0.1)."""
+    if isinstance(val_or_text, (int, float)) and not pd.isna(val_or_text):
+        val_rep = float(val_or_text)
+        texto_str = str(val_or_text)
+    else:
+        val_rep = obtener_valor_representativo(str(val_or_text))
+        texto_str = str(val_or_text).strip()
+
+    if val_rep is None:
+        return None, False, "DATO_TAMAÑO_NO_RECONOCIDO"
+
+    # Categoria abierta '251 y más personas'
+    if texto_str == '251 y más personas' or val_rep >= 251:
+        if target_max <= 250:
+            return 85.0, True, "GRAN_EMPRESA_TECHO_DENUE"
+        else:
+            ratio = (target_min - val_rep) / target_min if target_min > val_rep else 0
+            score = max(0.0, 100.0 * (1.0 - (ratio ** 2)))
+            return round(score, 1), True, "GRAN_EMPRESA_TECHO_DENUE"
+
+    # Categorías cerradas
+    if target_min <= val_rep <= target_max:
+        return 100.0, False, "PERFIL_IDEAL"
+    elif val_rep < target_min:
+        ratio = (target_min - val_rep) / target_min
+        score = max(0.0, 100.0 * (1.0 - (ratio ** 2)))
+        return round(score, 1), False, "SUB_ESCALA"
+    else:
+        ratio = (val_rep - target_max) / val_rep
+        score = max(0.0, 100.0 * (1.0 - ratio))
+        return round(score, 1), False, "SOBRE_ESCALA"
 
 # --------------------------- Carga de configuraciones por cliente ---------------------------
 def cargar_configs():
@@ -185,7 +238,7 @@ def clasifica_sector_denue(rama_texto):
     return "Otro"
 
 
-# --------------------------- Scoring ---------------------------
+# --------------------------- Scoring P0.1 ---------------------------
 def score_row(r, target, weights):
     if r["Sector"] in SECTORES_AFINES:
         sector = 100
@@ -193,17 +246,19 @@ def score_row(r, target, weights):
         sector = 100
     else:
         sector = 0
-    emp = float(r["Empleados"])
-    if emp >= target["empleados_min"]:
-        size = 100
-    elif emp >= 20:
-        size = int(100 * (emp - 20) / max(target["empleados_min"] - 20, 1))
-    else:
-        size = 0
+
+    # Integración Quirúrgica P0.1: Sensibilidad de tamaño
+    size_score, flag_techo, estatus = calcular_score_tamano_p01(
+        r["Empleados"], 
+        target.get("empleados_min", 50), 
+        target.get("empleados_max", 250)
+    )
+    size_val = size_score if size_score is not None else 0.0
+
     geo = 100 if estado_coincide(r["Estado"], target["estados"]) else 0
     need = 100 if r["Necesidad"] in NECESIDADES_AFINES else (50 if r["Necesidad"] == "" else 0)
     denom = sum(weights.values()) or 1
-    return round((sector * weights["Sector"] + size * weights["Tamaño"] + geo * weights["Geografía"] + need * weights["Necesidad"]) / denom, 1)
+    return round((sector * weights["Sector"] + size_val * weights["Tamaño"] + geo * weights["Geografía"] + need * weights["Necesidad"]) / denom, 1)
 
 
 def es_marca_excluida(nombre_empresa):
@@ -264,7 +319,6 @@ if st.session_state.get("_fuente") != fuente_actual:
     if uploaded:
         try:
             if uploaded.name.lower().endswith(".csv"):
-                # Carga optimizada usando usecols para limitar el consumo de RAM
                 try:
                     df_crudo = pd.read_csv(uploaded, usecols=lambda c: c.strip().lower() in COLS_DENUE or c in ["Empresa", "Sector", "Empleados", "Estado"], encoding="utf-8")
                 except Exception:
@@ -277,7 +331,6 @@ if st.session_state.get("_fuente") != fuente_actual:
                 st.sidebar.info("Formato DENUE detectado — mapeando Empresa, Sector, Empleados y Estado automáticamente.")
                 data = mapea_denue(df_crudo)
                 data["Sector"] = data["Sector"].apply(clasifica_sector_denue)
-                data["Empleados"] = data["Empleados"].apply(_parsea_empleados)
                 excluidas = data["Empresa"].apply(es_marca_excluida)
                 n_excl = excluidas.notna().sum()
                 data = data[excluidas.isna()].reset_index(drop=True)
@@ -304,7 +357,7 @@ if st.session_state.get("_fuente") != fuente_actual:
 data = st.session_state["cartera"].copy()
 
 # --------------------------- Normalización de tipos ---------------------------
-for c in ["Empleados", "Valor potencial MXN"]:
+for c in ["Valor potencial MXN"]:
     data[c] = pd.to_numeric(data[c], errors="coerce").fillna(0)
 data["Sector"] = data["Sector"].fillna("Otro").astype(str)
 data["Estado"] = data["Estado"].fillna("").astype(str)
@@ -313,6 +366,12 @@ data["Necesidad"] = data["Necesidad"].fillna("").astype(str)
 
 target = {"sector": sector_obj, "empleados_min": emp_min, "empleados_max": emp_max, "estados": estados_obj}
 data["Match Score"] = data.apply(lambda r: score_row(r, target, weights), axis=1)
+
+# Banderas P0.1 informativas en el DataFrame
+res_p01 = data["Empleados"].apply(lambda e: calcular_score_tamano_p01(e, emp_min, emp_max))
+data["Flag_Techo_DENUE"] = [r[1] for r in res_p01]
+data["Estatus_Tamaño"] = [r[2] for r in res_p01]
+
 data["Clasificación"] = data.apply(classify, axis=1)
 data["Prioridad"] = np.select([data["Match Score"] >= CFG["umbral_aaa"], data["Match Score"] >= CFG["umbral_aa"]], ["AAA", "AA"], default="Validar")
 data = data.sort_values("Match Score", ascending=False).reset_index(drop=True)
@@ -359,7 +418,7 @@ left, right = st.columns([3, 1])
 with left:
     fig = px.scatter(data, x="Match Score", y="Valor potencial MXN", color="Clasificación",
                       size="Empleados", hover_name="Empresa",
-                      hover_data=["Sector", "Estado", "Empleados", "Madurez", "Necesidad", "Prioridad"],
+                      hover_data=["Sector", "Estado", "Empleados", "Madurez", "Necesidad", "Prioridad", "Estatus_Tamaño"],
                       range_x=[0, 100], title="Afinidad vs. valor potencial")
     fig.add_vline(x=CFG["umbral_aaa"], line_dash="dash", annotation_text=f"Umbral AAA ({CFG['umbral_aaa']}%)")
     fig.add_vline(x=CFG["umbral_aa"], line_dash="dot", annotation_text=f"Umbral AA ({CFG['umbral_aa']}%)")
