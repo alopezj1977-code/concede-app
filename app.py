@@ -169,6 +169,8 @@ st.sidebar.markdown("---")
 
 SECTORES = CFG["sectores"]
 SECTORES_AFINES = set(CFG.get("sectores_afines", []))
+REGIONES = CFG["regiones"]
+ZONAS = sum(REGIONES.values(), [])
 NECESIDADES = CFG["necesidades"]
 NECESIDADES_AFINES = set(CFG.get("necesidades_afines", []))
 MARCAS_EXCLUIR = CFG.get("marcas_excluir", [])
@@ -313,7 +315,7 @@ idx_sector = SECTORES.index(CFG["sector_objetivo_default"]) if CFG["sector_objet
 sector_obj = st.sidebar.selectbox("Sector / industria objetivo", SECTORES, index=idx_sector)
 emp_min, emp_max = st.sidebar.slider("Rango de empleados", 1, 5000, tuple(CFG["empleados_rango_default"]), step=10)
 
-# P0.2 - Selector Geográfico Objetivo (Catálogo Oficial Nacional de 32 Entidades + TODAS)
+# P0.2 CORREGIDO: Usar CATALOGO_ENTIDADES_MEXICO en lugar de ZONAS
 estados_obj = st.sidebar.multiselect(
     "Estados / corredores objetivo", 
     CATALOGO_ENTIDADES_MEXICO, 
