@@ -486,7 +486,7 @@ def main():
     # Filtro de elegibilidad V1 / reconciliacion de benchmark
     col_emp = mapping.get("per_ocu")
     if col_emp and col_emp in df_raw.columns:
-        df_elegibles = df_raw[df_raw[col_emp].apply(calcular_score_tamano_p01) > 0].copy()
+        df_elegibles = df_raw[df_raw[col_emp].apply(es_elegible_target_51plus)].copy()
     else:
         df_elegibles = df_raw.copy()
 
