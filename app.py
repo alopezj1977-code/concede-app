@@ -93,6 +93,68 @@ def identificar_columnas(df: pd.DataFrame) -> dict:
     return mapping
 
 
+def clasifica_sector_denue(df: pd.DataFrame, col_act: Optional[str]) -> pd.Series:
+    """
+    P0.6: Clasificación comercial DENUE recuperada textualmente del commit V1 db62ce9.
+    Orden estricto V1 y fallback 'Otro'.
+    """
+    if not col_act or col_act not in df.columns:
+        return pd.Series(["Otro"] * len(df), index=df.index)
+
+    def mapear_actividad(act):
+        if pd.isna(act):
+            return "Otro"
+        txt = str(act).upper()
+        
+        # Descalificadores directos de V1 real (db62ce9)
+        if any(w in txt for w in [
+            "DISTRIBUCION DE ENERGIA", "DISTRIBUCION DE AGUA", "CONSTRUCCION DE OBRAS",
+            "TRATAMIENTO DE AGUAS", "SUBESTACION", "SISTEMAS DE RIEGO", "PERFORACIONES",
+            "OBRAS PARA EL TRATAMIENTO", "RESTAURANTE", "PREPARACION DE ALIMENTOS PARA CONSUMO",
+            "SERVICIOS DE PREPARACION DE ALIMENTOS", "CAFETERIA", "COMEDOR"
+        ]):
+            return "Otro"
+
+        # 1. Agroindustria (evaluado ANTES de Fertilizantes según orden V1)
+        if any(w in txt for w in ["AZUCAR", "INGENIO", "GRANO", "FERTILIZANTE", "AGROINDUSTR", "SEMILLA", "AGRICOLA"]):
+            return "Agroindustria"
+
+        # 2. CPG / Consumo
+        if any(w in txt for w in ["ALIMENTO", "BEBIDA", "CONSUMO", "PRODUCTOS DE ASEO", "HIGIENE", "PAPEL", "COSMETIC"]):
+            return "CPG / Consumo"
+
+        # 3. Retail / Mayoristas
+        if any(w in txt for w in [
+            "COMERCIO AL POR MAYOR", "MAYORISTA", "DISTRIBUCION DE ALIMENTOS",
+            "DISTRIBUCION COMERCIAL", "DISTRIBUCION DE MERCANCIAS", "DISTRIBUCION DE PRODUCTOS",
+            "CENTRAL DE ABASTO"
+        ]):
+            return "Retail / Mayoristas"
+
+        # 4. Logística
+        if any(w in txt for w in [
+            "AUTOTRANSPORTE", "TRANSPORTE DE CARGA", "ALMACENAMIENTO", "ALMACEN GENERAL",
+            "LOGISTIC", "AGENCIA ADUANAL", "TRANSPORTE FERROVIARIO", "FLETE", "FORWARDER"
+        ]):
+            return "Logística"
+
+        # 5. Fertilizantes
+        if any(w in txt for w in ["FERTILIZANTE"]):
+            return "Fertilizantes"
+
+        # 6. Servicios profesionales
+        if any(w in txt for w in ["SERVICIOS PROFESIONALES", "CONSULTORIA", "DESPACHO", "ASESORIA"]):
+            return "Servicios profesionales"
+
+        # 7. Comercio minorista local
+        if any(w in txt for w in ["COMERCIO AL POR MENOR", "TIENDA DE ABARROTES", "MINISUPER"]):
+            return "Comercio minorista local"
+
+        return "Otro"
+
+    return df[col_act].apply(mapear_actividad)
+
+
 def detectar_capacidad_propia(df: pd.DataFrame, col_nom: Optional[str], col_raz: Optional[str], marcas_excluir: list) -> pd.Series:
     """
     P0.4: Genera una bandera booleana / texto indicando si el registro tiene
@@ -152,6 +214,24 @@ def calcular_score_tamano_p01(val) -> float:
             return 50.0
 
 
+def es_elegible_target_51plus(val) -> bool:
+    """
+    P0.6: Filtro estricto del Universo Elegible Target (51+ personas).
+    0-5: fuera | 6-10: fuera | 11-30: fuera | 31-50: fuera
+    51-100: dentro | 101-250: dentro | 251+: dentro
+    """
+    if pd.isna(val):
+        return False
+    s = str(val).upper()
+    if any(m in s for m in ["51 A 100", "51-100", "51 A 100 PERSONAS", "101 A 250", "101-250", "101 A 250 PERSONAS", "251 Y MÁS", "251 Y MAS", "251+", "251 EN ADELANTE"]):
+        return True
+    try:
+        num = float(val)
+        return num >= 51
+    except ValueError:
+        return False
+
+
 def parse_empleados_num_p02_h1(val) -> int:
     """P0.2-H1: Convierte texto de estrato DENUE a entero representativo para evitar TypeError en Plotly."""
     if pd.isna(val):
@@ -170,13 +250,18 @@ def parse_empleados_num_p02_h1(val) -> int:
         return 10
 
 
-def calcular_score_sector(val, sectores_afines: list) -> float:
-    if pd.isna(val) or not sectores_afines:
+def calcular_score_sector(val, sectores_afines: list, sector_clasificado: str = "") -> float:
+    if pd.isna(val) and not sector_clasificado:
         return 50.0
+    if sector_clasificado and sectores_afines:
+        for sec in sectores_afines:
+            if normalize_str(sec) in normalize_str(sector_clasificado):
+                return 100.0
     val_norm = normalize_str(str(val))
-    for sec in sectores_afines:
-        if normalize_str(sec) in val_norm:
-            return 100.0
+    if sectores_afines:
+        for sec in sectores_afines:
+            if normalize_str(sec) in val_norm:
+                return 100.0
     return 30.0
 
 
@@ -196,7 +281,7 @@ def calcular_score_geografia_p02(val, estados_seleccionados: list) -> float:
 
 def procesar_scoring(df: pd.DataFrame, mapping: dict, config: dict, estados_sel: list) -> pd.DataFrame:
     """
-    Ejecuta el pipeline entero de scoring P0.1, P0.2 y P0.4 sobre el DataFrame.
+    Ejecuta el pipeline entero de scoring P0.1, P0.2, P0.4 y P0.6 sobre el DataFrame.
     """
     res = df.copy()
 
@@ -205,6 +290,9 @@ def procesar_scoring(df: pd.DataFrame, mapping: dict, config: dict, estados_sel:
     col_act = mapping.get("nombre_act")
     col_emp = mapping.get("per_ocu")
     col_ent = mapping.get("entidad")
+
+    # P0.6: Clasificación sectorial comercial
+    res["Sector_Comercial"] = clasifica_sector_denue(res, col_act)
 
     # P0.4: Señal de capacidad propia probable
     marcas_excluir = config.get("marcas_excluir_capacidad_propia", [])
@@ -215,7 +303,10 @@ def procesar_scoring(df: pd.DataFrame, mapping: dict, config: dict, estados_sel:
 
     # Scores individuales
     sectores_afines = config.get("sectores_afines", [])
-    res["Score_Sector"] = res[col_act].apply(lambda x: calcular_score_sector(x, sectores_afines)) if col_act and col_act in res.columns else 50.0
+    res["Score_Sector"] = res.apply(
+        lambda r: calcular_score_sector(r[col_act], sectores_afines, r["Sector_Comercial"]) if col_act and col_act in res.columns else 50.0,
+        axis=1
+    )
     res["Score_Tamano"] = res[col_emp].apply(calcular_score_tamano_p01) if col_emp and col_emp in res.columns else 50.0
     res["Score_Geografia"] = res[col_ent].apply(lambda x: calcular_score_geografia_p02(x, estados_sel)) if col_ent and col_ent in res.columns else 100.0
     res["Score_Necesidad"] = 50.0  # Baseline neutro
@@ -250,13 +341,13 @@ def procesar_scoring(df: pd.DataFrame, mapping: dict, config: dict, estados_sel:
 
 def render_p03_funnel_panel(df_raw, df_elegibles, umbral_aaa, ticket_promedio):
     """
-    Renderiza el panel de métricas del Funnel Comercial (P0.3).
+    Renderiza el panel de métricas del Funnel Comercial (P0.3 / P0.6).
     Garantiza trazabilidad dinámica del universo de referencia sin hardcoding.
     """
     # Nivel 1: Universo DENUE de Referencia (CSV Crudo)
     universo_referencia_denue = len(df_raw)
     
-    # Nivel 2: Universo Elegible por Tamaño (>= 6 empleados)
+    # Nivel 2: Universo Elegible Target (>= 51 empleados)
     universo_elegible_tamano = len(df_elegibles)
     
     # Nivel 3 a 6: Cálculos sobre Universo Elegible usando campo nativo 'Match Score'
@@ -272,11 +363,11 @@ def render_p03_funnel_panel(df_raw, df_elegibles, umbral_aaa, ticket_promedio):
         st.metric("1. Universo DENUE Referencia", f"{universo_referencia_denue:,} registros DENUE", 
                   help="Total de registros/unidades económicas del archivo crudo INEGI.")
     with col2:
-        st.metric("2. Universo Elegible Tamaño", f"{universo_elegible_tamano:,} registros elegibles",
-                  help="Registros con 6 o más personas ocupadas.")
+        st.metric("2. Universo Elegible Target", f"{universo_elegible_tamano:,} registros elegibles",
+                  help="Registros con 51 o más personas ocupadas (empresas medianas y grandes).")
     with col3:
         st.metric("3. Índice Afinidad Promedio", f"{afinidad_promedio:.1f} / 100",
-                  help="Calculado sobre el universo elegible por tamaño.")
+                  help="Calculado sobre el universo elegible target.")
 
     col4, col5, col6 = st.columns(3)
     with col4:
@@ -289,7 +380,7 @@ def render_p03_funnel_panel(df_raw, df_elegibles, umbral_aaa, ticket_promedio):
     st.caption(
         "**Notas metodológicas:**\n"
         "• **Universo de referencia:** Registros DENUE cargados en la corrida.\n"
-        "• **Universo elegible por tamaño:** Registros con 6 o más personas ocupadas (0-5 fuera del universo elegible).\n"
+        "• **Universo elegible target:** Registros con 51 o más personas ocupadas (0-50 fuera del universo elegible).\n"
         "• **Afinidad:** Índice relativo de alineación con el perfil objetivo (Match Score); no implica intención de compra.\n"
         "• **Pipeline:** Estimación matemática basada en ticket configurado ($69,600 MXN); requiere validación comercial."
     )
@@ -301,7 +392,7 @@ def generar_datos_ejemplo() -> pd.DataFrame:
         "nom_estab": ["Logística del Bajío", "Manufacturas León", "Plásticos Silao", "Textiles Irapuato", "Calzado Celaya", "Transportes Querétaro", "Empaques Romita", "Sistemas San Fe", "Comercial San Miguel", "Distribuidora Salamanca"],
         "raz_social": ["Logística Bajío SA de CV", "Manufacturas León S de RL", "Plásticos Silao SA", "Textiles Irapuato SA de CV", "Calzado Celaya SA", "Transportes Querétaro SA de CV", "Bimbo de México SA de CV", "Sistemas San Fe SA", "Walmart de México SAB", "Distribuidora Salamanca SA"],
         "nombre_act": ["Autotransporte de carga general", "Fabricación de partes de vehículos", "Fabricación de productos de plástico", "Fabricación de prendas de vestir", "Fabricación de calzado", "Servicios de almacenamiento", "Fabricación de envases de cartón", "Comercio al por mayor", "Supermercados", "Comercio de abarrotes"],
-        "per_ocu": ["51 a 100 personas", "101 a 250 personas", "31 a 50 personas", "11 a 30 personas", "6 a 10 personas", "251 y más personas", "251 y más personas", "6 a 10 personas", "251 y más personas", "11 a 30 personas"],
+        "per_ocu": ["51 a 100 personas", "101 a 250 personas", "51 a 100 personas", "101 a 250 personas", "51 a 100 personas", "251 y más personas", "251 y más personas", "51 a 100 personas", "251 y más personas", "101 a 250 personas"],
         "entidad": ["Guanajuato", "Guanajuato", "Guanajuato", "Guanajuato", "Guanajuato", "Querétaro", "Guanajuato", "Guanajuato", "Guanajuato", "Guanajuato"]
     })
 
@@ -392,14 +483,14 @@ def main():
 
     mapping = identificar_columnas(df_raw)
 
-    # Filtro de elegibilidad P0.3 (>= 6 personas)
+    # Filtro de elegibilidad P0.6 (>= 51 personas: Target)
     col_emp = mapping.get("per_ocu")
     if col_emp and col_emp in df_raw.columns:
-        df_elegibles = df_raw[df_raw[col_emp].apply(calcular_score_tamano_p01) > 0].copy()
+        df_elegibles = df_raw[df_raw[col_emp].apply(es_elegible_target_51plus)].copy()
     else:
         df_elegibles = df_raw.copy()
 
-    # Procesar Scoring P0.1, P0.2, P0.4
+    # Procesar Scoring P0.1, P0.2, P0.4, P0.6
     df_scored = procesar_scoring(df_elegibles, mapping, config, estados_sel)
 
     # Render Panel P0.3
