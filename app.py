@@ -214,21 +214,27 @@ def calcular_score_tamano_p01(val) -> float:
             return 50.0
 
 
-def es_elegible_target_51plus(val) -> bool:
+def es_elegible_v1_20plus(val) -> bool:
     """
-    P0.6: Filtro estricto del Universo Elegible Target (51+ personas).
-    0-5: fuera | 6-10: fuera | 11-30: fuera | 31-50: fuera
-    51-100: dentro | 101-250: dentro | 251+: dentro
+    V1/P0.3: Universo elegible compatible con el baseline histórico.
+    DENUE: 0-5 fuera | 6-10 fuera | 11-30 dentro | 31-50 dentro |
+    51-100 dentro | 101-250 dentro | 251+ dentro.
+    El estrato 11-30 se representa como 20 personas en el baseline V1.
     """
     if pd.isna(val):
         return False
     s = str(val).upper()
-    if any(m in s for m in ["51 A 100", "51-100", "51 A 100 PERSONAS", "101 A 250", "101-250", "101 A 250 PERSONAS", "251 Y MÁS", "251 Y MAS", "251+", "251 EN ADELANTE"]):
+    if any(m in s for m in [
+        "11 A 30", "11-30", "11 A 30 PERSONAS",
+        "31 A 50", "31-50", "31 A 50 PERSONAS",
+        "51 A 100", "51-100", "51 A 100 PERSONAS",
+        "101 A 250", "101-250", "101 A 250 PERSONAS",
+        "251 Y MÁS", "251 Y MAS", "251+", "251 EN ADELANTE"
+    ]):
         return True
     try:
-        num = float(val)
-        return num >= 51
-    except ValueError:
+        return float(val) >= 20
+    except (ValueError, TypeError):
         return False
 
 
@@ -347,7 +353,7 @@ def render_p03_funnel_panel(df_raw, df_elegibles, umbral_aaa, ticket_promedio):
     # Nivel 1: Universo DENUE de Referencia (CSV Crudo)
     universo_referencia_denue = len(df_raw)
     
-    # Nivel 2: Universo Elegible según Score_Tamano > 0 (reconciliación V1/P0.1)
+    # Nivel 2: Universo Elegible Target (>= 51 empleados)
     universo_elegible_tamano = len(df_elegibles)
     
     # Nivel 3 a 6: Cálculos sobre Universo Elegible usando campo nativo 'Match Score'
@@ -363,8 +369,8 @@ def render_p03_funnel_panel(df_raw, df_elegibles, umbral_aaa, ticket_promedio):
         st.metric("1. Universo DENUE Referencia", f"{universo_referencia_denue:,} registros DENUE", 
                   help="Total de registros/unidades económicas del archivo crudo INEGI.")
     with col2:
-        st.metric("2. Universo Elegible V1/P0.1", f"{universo_elegible_tamano:,} registros elegibles",
-                  help="Registros cuyo Score_Tamano P0.1 es mayor que cero.")
+        st.metric("2. Universo Elegible Target", f"{universo_elegible_tamano:,} registros elegibles",
+                  help="Registros con 11-30 personas ocupadas y superiores; 11-30 se representa como 20 en el baseline V1.")
     with col3:
         st.metric("3. Índice Afinidad Promedio", f"{afinidad_promedio:.1f} / 100",
                   help="Calculado sobre el universo elegible target.")
@@ -380,7 +386,7 @@ def render_p03_funnel_panel(df_raw, df_elegibles, umbral_aaa, ticket_promedio):
     st.caption(
         "**Notas metodológicas:**\n"
         "• **Universo de referencia:** Registros DENUE cargados en la corrida.\n"
-        "• **Universo elegible V1/P0.1:** Registros cuyo Score_Tamano P0.1 es mayor que cero.\n"
+        "• **Universo elegible target:** Registros del universo V1: 11-30 personas ocupadas y superiores; 0-10 quedan fuera.\n"
         "• **Afinidad:** Índice relativo de alineación con el perfil objetivo (Match Score); no implica intención de compra.\n"
         "• **Pipeline:** Estimación matemática basada en ticket configurado ($69,600 MXN); requiere validación comercial."
     )
@@ -483,10 +489,10 @@ def main():
 
     mapping = identificar_columnas(df_raw)
 
-    # Universo elegible reconciliado con la lógica V1/P0.1: Score_Tamano > 0.
+    # Filtro de elegibilidad P0.6 (>= 51 personas: Target)
     col_emp = mapping.get("per_ocu")
     if col_emp and col_emp in df_raw.columns:
-        df_elegibles = df_raw[df_raw[col_emp].apply(calcular_score_tamano_p01) > 0].copy()
+        df_elegibles = df_raw[df_raw[col_emp].apply(es_elegible_v1_20plus)].copy()
     else:
         df_elegibles = df_raw.copy()
 
