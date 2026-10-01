@@ -355,7 +355,7 @@ def main():
     umb = config.get("umbrales", {"AAA": 75, "AA": 55})
     umbral_aaa = st.sidebar.slider("Umbral Cuenta AAA", min_value=50.0, max_value=90.0, value=float(umb.get("AAA", 75)), step=5.0)
 
-    # Carga de Archivo DENUE
+    # Carga de Archivo DENUE con fallback exclusivo por UnicodeDecodeError usando exactamente COLS_DENUE
     st.sidebar.divider()
     st.sidebar.header("📁 Ingesta de Datos DENUE")
     uploaded_file = st.sidebar.file_uploader("Cargar CSV / Excel de INEGI:", type=["csv", "xlsx"])
@@ -364,7 +364,21 @@ def main():
     if uploaded_file is not None:
         try:
             if uploaded_file.name.endswith(".csv"):
-                df_raw = pd.read_csv(uploaded_file, encoding="utf-8", low_memory=False)
+                try:
+                    df_raw = pd.read_csv(
+                        uploaded_file,
+                        encoding="utf-8",
+                        usecols=lambda c: normalize_str(c) in [normalize_str(x) for x in COLS_DENUE],
+                        low_memory=False
+                    )
+                except UnicodeDecodeError:
+                    uploaded_file.seek(0)
+                    df_raw = pd.read_csv(
+                        uploaded_file,
+                        encoding="latin-1",
+                        usecols=lambda c: normalize_str(c) in [normalize_str(x) for x in COLS_DENUE],
+                        low_memory=False
+                    )
             else:
                 df_raw = pd.read_excel(uploaded_file)
             st.success(f"Dataset cargado exitosamente: **{len(df_raw):,}** registros leídos.")
