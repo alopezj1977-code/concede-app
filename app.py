@@ -368,8 +368,11 @@ if st.session_state.get("_fuente") != fuente_actual:
                 data["Sector"] = data["Sector"].apply(clasifica_sector_denue)
                 excluidas = data["Empresa"].apply(es_marca_excluida)
                 n_excl = excluidas.notna().sum()
-                data = data[excluidas.isna()].reset_index(drop=True)
-                st.sidebar.success(f"{len(data):,} registros cargados. {n_excl:,} excluidos por marcas con flota propia.")
+                
+                # P0.4: Reinserción de grandes corporativos con Señal Comercial
+                data["Capacidad_Propia_Probable"] = excluidas.notna()
+                data["Señal: Capacidad propia probable"] = np.where(data["Capacidad_Propia_Probable"], "Sí", "No")
+                st.sidebar.success(f"{len(data):,} registros cargados ({n_excl:,} con 'Señal: Capacidad propia probable').")
             else:
                 required = {"Empresa", "Sector", "Empleados", "Estado"}
                 missing = required - set(df_crudo.columns)
@@ -381,12 +384,16 @@ if st.session_state.get("_fuente") != fuente_actual:
                     for opc, default in [("Madurez", "Por confirmar"), ("Necesidad", ""), ("Valor potencial MXN", 0)]:
                         if opc not in data.columns:
                             data[opc] = default
+                    data["Capacidad_Propia_Probable"] = False
+                    data["Señal: Capacidad propia probable"] = "No"
                     st.sidebar.success(f"{len(data):,} registros cargados.")
         except Exception as e:
             st.sidebar.error(f"No se pudo leer el archivo: {e}")
             data = DEMO.copy()
     else:
         data = DEMO.copy()
+        data["Capacidad_Propia_Probable"] = False
+        data["Señal: Capacidad propia probable"] = "No"
     st.session_state["cartera"] = data
 
 data = st.session_state["cartera"].copy()
@@ -422,12 +429,20 @@ if uploaded is None:
     st.warning("Estás viendo DATOS DE EJEMPLO (ficticios). Carga un CSV real en la barra lateral para ver resultados reales.", icon="⚠️")
 st.info("El puntaje es una simulación basada en los campos disponibles. La matriz no aporta datos suficientes para deducir necesidad real, facturación, decisor ni presupuesto por empresa: esos puntos deben confirmarse en llamada.")
 
-f1, f2, f3 = st.columns(3)
-f1.metric("Match Score promedio", f"{data['Match Score'].mean():.1f}%")
+# P0.3 - Panel de Métricas del Embudo Comercial
+total_registros = len(data)
+afinidad_promedio = data["Match Score"].mean() if total_registros > 0 else 0.0
 n_aaa = (data["Prioridad"] == "AAA").sum()
-f2.metric("Cuentas AAA", f"{n_aaa:,}")
+penetracion_aaa = (n_aaa / total_registros * 100) if total_registros > 0 else 0.0
 pipeline_estimado = n_aaa * presupuesto
-f3.metric("Pipeline potencial estimado", f"${pipeline_estimado:,.0f} MXN", help="Cuentas AAA × ticket promedio capturado arriba.")
+
+col1, col2, col3, col4 = st.columns(4)
+col1.metric("Universo Analizado", f"{total_registros:,}")
+col2.metric("Índice de Afinidad Promedio", f"{afinidad_promedio:.1f} / 100")
+col3.metric("Cuentas AAA (Alta Prioridad)", f"{n_aaa:,}")
+col4.metric("Penetración AAA", f"{penetracion_aaa:.2f}%")
+
+st.metric("Pipeline potencial estimado", f"${pipeline_estimado:,.0f} MXN", help="Cuentas AAA × ticket promedio capturado arriba.")
 
 # --------------------------- Diagnóstico de Madurez ---------------------------
 if DIAG:
@@ -464,9 +479,12 @@ with left:
         x="Match Score", 
         y="Valor potencial MXN", 
         color="Clasificación",
-        size="Empleados_Num",  # <--- HOTFIX P0.2-H1: Uso seguro para tamaño de burbuja
+        size="Empleados_Num",  # <--- HOTFIX P0.2-H1
         hover_name="Empresa",
-        hover_data=["Sector", "Estado", "Empleados", "Madurez", "Necesidad", "Prioridad", "Estatus_Tamaño", "Estatus_Geografía"],
+        hover_data=[
+            "Sector", "Estado", "Empleados", "Madurez", "Necesidad", 
+            "Prioridad", "Estatus_Tamaño", "Estatus_Geografía", "Señal: Capacidad propia probable"
+        ],
         range_x=[0, 100], 
         title="Afinidad vs. valor potencial"
     )
@@ -505,12 +523,12 @@ with pd.ExcelWriter(excel_buffer, engine="openpyxl") as writer:
 st.download_button("⬇️ Descargar resultados Excel", data=excel_buffer.getvalue(), file_name=f"{cliente_sel}_cuentas_priorizadas.xlsx",
                     mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
 
-with st.expander("Reglas del juego y limitations"):
+with st.expander("Reglas del juego y limitaciones"):
     st.markdown(f"""
     - Matriz activa: **{cliente_sel}**, cargada desde `configs/{cliente_sel.lower()}.json`.
     - Pesos iniciales: Sector {pd_['Sector']}, Tamaño {pd_['Tamaño']}, Geografía {pd_['Geografía']}, Necesidad {pd_['Necesidad']} — normalizados a 100%.
     - Carga optimizada para DENUE: extrae columnas clave para minimizar uso de memoria RAM.
-    - Se excluyen automáticamente marcas con flotilla/almacenes propios conocidos.
+    - Las marcas corporativas con infraestructura propia se reincorporan con 'Señal: Capacidad propia probable' para validación comercial.
     """)
 
 st.markdown('<div class="small-note">4MSFTS · Menos es más · Evidencia antes de tecnología</div>', unsafe_allow_html=True)
