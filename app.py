@@ -214,27 +214,21 @@ def calcular_score_tamano_p01(val) -> float:
             return 50.0
 
 
-def es_elegible_v1_20plus(val) -> bool:
+def es_elegible_target_51plus(val) -> bool:
     """
-    V1/P0.3: Universo elegible compatible con el baseline histórico.
-    DENUE: 0-5 fuera | 6-10 fuera | 11-30 dentro | 31-50 dentro |
-    51-100 dentro | 101-250 dentro | 251+ dentro.
-    El estrato 11-30 se representa como 20 personas en el baseline V1.
+    P0.6: Filtro estricto del Universo Elegible Target (51+ personas).
+    0-5: fuera | 6-10: fuera | 11-30: fuera | 31-50: fuera
+    51-100: dentro | 101-250: dentro | 251+: dentro
     """
     if pd.isna(val):
         return False
     s = str(val).upper()
-    if any(m in s for m in [
-        "11 A 30", "11-30", "11 A 30 PERSONAS",
-        "31 A 50", "31-50", "31 A 50 PERSONAS",
-        "51 A 100", "51-100", "51 A 100 PERSONAS",
-        "101 A 250", "101-250", "101 A 250 PERSONAS",
-        "251 Y MÁS", "251 Y MAS", "251+", "251 EN ADELANTE"
-    ]):
+    if any(m in s for m in ["51 A 100", "51-100", "51 A 100 PERSONAS", "101 A 250", "101-250", "101 A 250 PERSONAS", "251 Y MÁS", "251 Y MAS", "251+", "251 EN ADELANTE"]):
         return True
     try:
-        return float(val) >= 20
-    except (ValueError, TypeError):
+        num = float(val)
+        return num >= 51
+    except ValueError:
         return False
 
 
@@ -268,7 +262,7 @@ def calcular_score_sector(val, sectores_afines: list, sector_clasificado: str = 
         for sec in sectores_afines:
             if normalize_str(sec) in val_norm:
                 return 100.0
-    return 30.0
+    return 0.0
 
 
 def calcular_score_geografia_p02(val, estados_seleccionados: list) -> float:
@@ -282,7 +276,7 @@ def calcular_score_geografia_p02(val, estados_seleccionados: list) -> float:
         target_norm = normalize_str(est)
         if target_norm in val_norm or val_norm in target_norm:
             return 100.0
-    return 20.0
+    return 0.0
 
 
 def procesar_scoring(df: pd.DataFrame, mapping: dict, config: dict, estados_sel: list) -> pd.DataFrame:
@@ -315,7 +309,7 @@ def procesar_scoring(df: pd.DataFrame, mapping: dict, config: dict, estados_sel:
     )
     res["Score_Tamano"] = res[col_emp].apply(calcular_score_tamano_p01) if col_emp and col_emp in res.columns else 50.0
     res["Score_Geografia"] = res[col_ent].apply(lambda x: calcular_score_geografia_p02(x, estados_sel)) if col_ent and col_ent in res.columns else 100.0
-    res["Score_Necesidad"] = 50.0  # Baseline neutro
+    res["Score_Necesidad"] = 0.0  # Benchmark V1: sin señal de necesidad, no sumar afinidad artificial
 
     # Ponderación
     pesos = config.get("pesos_defecto", {"sector": 35, "tamano": 25, "geografia": 25, "necesidad": 15})
@@ -370,7 +364,7 @@ def render_p03_funnel_panel(df_raw, df_elegibles, umbral_aaa, ticket_promedio):
                   help="Total de registros/unidades económicas del archivo crudo INEGI.")
     with col2:
         st.metric("2. Universo Elegible Target", f"{universo_elegible_tamano:,} registros elegibles",
-                  help="Registros con 11-30 personas ocupadas y superiores; 11-30 se representa como 20 en el baseline V1.")
+                  help="Registros con 51 o más personas ocupadas (empresas medianas y grandes).")
     with col3:
         st.metric("3. Índice Afinidad Promedio", f"{afinidad_promedio:.1f} / 100",
                   help="Calculado sobre el universo elegible target.")
@@ -386,7 +380,7 @@ def render_p03_funnel_panel(df_raw, df_elegibles, umbral_aaa, ticket_promedio):
     st.caption(
         "**Notas metodológicas:**\n"
         "• **Universo de referencia:** Registros DENUE cargados en la corrida.\n"
-        "• **Universo elegible target:** Registros del universo V1: 11-30 personas ocupadas y superiores; 0-10 quedan fuera.\n"
+        "• **Universo elegible target:** Registros con 51 o más personas ocupadas (0-50 fuera del universo elegible).\n"
         "• **Afinidad:** Índice relativo de alineación con el perfil objetivo (Match Score); no implica intención de compra.\n"
         "• **Pipeline:** Estimación matemática basada en ticket configurado ($69,600 MXN); requiere validación comercial."
     )
@@ -489,10 +483,10 @@ def main():
 
     mapping = identificar_columnas(df_raw)
 
-    # Filtro de elegibilidad P0.6 (>= 51 personas: Target)
+    # Filtro de elegibilidad V1 / reconciliacion de benchmark
     col_emp = mapping.get("per_ocu")
     if col_emp and col_emp in df_raw.columns:
-        df_elegibles = df_raw[df_raw[col_emp].apply(es_elegible_v1_20plus)].copy()
+        df_elegibles = df_raw[df_raw[col_emp].apply(calcular_score_tamano_p01) > 0].copy()
     else:
         df_elegibles = df_raw.copy()
 
