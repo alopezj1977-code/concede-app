@@ -1,7 +1,7 @@
 # app.py
-# 4MSFTS | Motor de Generación de Demanda — multi-cliente
+# 4MSFTS | Motor de Generación de Demanda – multi-cliente
 # Streamlit single-file. Los datos de ejemplo NO representan cartera real.
-# La matriz de cada cliente vive en configs/*.json — para adaptar a un cliente
+# La matriz de cada cliente vive en configs/*.json – para adaptar a un cliente
 # nuevo NO se toca este archivo, solo se agrega/edita su JSON en esa carpeta.
 
 import io
@@ -18,7 +18,7 @@ import streamlit as st
 
 st.set_page_config(page_title="4MSFTS | Motor de Demanda", page_icon="🎯", layout="wide")
 
-# --------------------------- Estilo ejecutivo ---------------------------
+# -------------------------- Estilo ejecutivo --------------------------
 st.markdown("""
 <style>
 .block-container {padding-top: 1.5rem; padding-bottom: 2rem;}
@@ -33,502 +33,422 @@ CONFIG_DIR = os.path.join(os.path.dirname(__file__), "configs")
 # Columnas clave para la optimizacion extrema de memoria con bases del DENUE (RAM)
 COLS_DENUE = ["nom_estab", "raz_social", "nombre_act", "per_ocu", "entidad"]
 
-# ==============================================================================
-# P0.1 - NÚCLEO DE SENSIBILIDAD DE TAMAÑO (DENUE)
-# ==============================================================================
-MAPEO_DENUE_EXACTO = {
-    '0 a 5 personas': 3,
-    '6 a 10 personas': 8,
-    '11 a 30 personas': 20,
-    '31 a 50 personas': 40,
-    '51 a 100 personas': 75,
-    '101 a 250 personas': 175,
-    '251 y más personas': 251
+# Mapeo universal de campos DENUE / archivos genéricos
+COL_ALIASES = {
+    "nom_estab": ["nom_estab", "nombre", "empresa", "nombre_establecimiento", "establecimiento", "nombre comercial"],
+    "raz_social": ["raz_social", "razon social", "razon_social", "empresa_razon"],
+    "nombre_act": ["nombre_act", "actividad", "giró", "giro", "sector", "rama", "actividad_economica"],
+    "per_ocu": ["per_ocu", "empleados", "tamano", "tamaño", "personal", "estrato_personal", "rango_empleados"],
+    "entidad": ["entidad", "estado", "ubicacion", "region", "entidad_federativa"],
 }
 
-def obtener_valor_representativo(texto_per_ocu: str) -> Optional[int]:
-    """Devuelve el valor representativo o None si el texto no es reconocido/NaN."""
-    if pd.isna(texto_per_ocu) or not isinstance(texto_per_ocu, str):
-        return None
-    return MAPEO_DENUE_EXACTO.get(str(texto_per_ocu).strip(), None)
-
-def calcular_score_tamano_p01(val_or_text, target_min: int, target_max: int) -> Tuple[Optional[float], bool, str]:
-    """Calcula la afinidad de tamaño sensible a min y max (P0.1)."""
-    if isinstance(val_or_text, (int, float)) and not pd.isna(val_or_text):
-        val_rep = float(val_or_text)
-        texto_str = str(val_or_text)
-    else:
-        val_rep = obtener_valor_representativo(str(val_or_text))
-        texto_str = str(val_or_text).strip()
-
-    if val_rep is None:
-        return None, False, "DATO_TAMAÑO_NO_RECONOCIDO"
-
-    # Categoria abierta '251 y más personas'
-    if texto_str == '251 y más personas' or val_rep >= 251:
-        if target_max <= 250:
-            return 85.0, True, "GRAN_EMPRESA_TECHO_DENUE"
-        else:
-            ratio = (target_min - val_rep) / target_min if target_min > val_rep else 0
-            score = max(0.0, 100.0 * (1.0 - (ratio ** 2)))
-            return round(score, 1), True, "GRAN_EMPRESA_TECHO_DENUE"
-
-    # Categorías cerradas
-    if target_min <= val_rep <= target_max:
-        return 100.0, False, "PERFIL_IDEAL"
-    elif val_rep < target_min:
-        ratio = (target_min - val_rep) / target_min
-        score = max(0.0, 100.0 * (1.0 - (ratio ** 2)))
-        return round(score, 1), False, "SUB_ESCALA"
-    else:
-        ratio = (val_rep - target_max) / val_rep
-        score = max(0.0, 100.0 * (1.0 - ratio))
-        return round(score, 1), False, "SOBRE_ESCALA"
-
-# ==============================================================================
-# P0.2 - NÚCLEO DE COBERTURA GEOGRÁFICA (32 ENTIDADES + TODAS)
-# ==============================================================================
-CATALOGO_ENTIDADES_MEXICO = [
-    "TODAS LAS ENTIDADES",
-    "Aguascalientes", "Baja California", "Baja California Sur", "Campeche", 
-    "Chiapas", "Chihuahua", "Ciudad de México", "Coahuila", "Colima", 
-    "Durango", "Estado de México", "Guanajuato", "Guerrero", "Hidalgo", 
-    "Jalisco", "Michoacán", "Morelos", "Nayarit", "Nuevo León", 
-    "Oaxaca", "Puebla", "Querétaro", "Quintana Roo", "San Luis Potosí", 
-    "Sinaloa", "Sonora", "Tabasco", "Tamaulipas", "Tlaxcala", 
-    "Veracruz", "Yucatán", "Zacatecas"
+ESTADOS_MEXICO = [
+    "TODAS LAS ENTIDADES", "AGUASCALIENTES", "BAJA CALIFORNIA", "BAJA CALIFORNIA SUR",
+    "CAMPECHE", "CHIAPAS", "CHIHUAHUA", "CIUDAD DE MÉXICO", "COAHUILA", "COLIMA",
+    "DURANGO", "ESTADO DE MÉXICO", "GUANAJUATO", "GUERRERO", "HIDALGO", "JALISCO",
+    "MICHOACÁN", "MORELOS", "NAYARIT", "NUEVO LEÓN", "OAXACA", "PUEBLA", "QUERÉTARO",
+    "QUINTANA ROO", "SAN LUIS POTOSÍ", "SINALOA", "SONORA", "TABASCO", "TAMAULIPAS",
+    "TLAXCALA", "VERACRUZ", "YUCATÁN", "ZACATECAS"
 ]
 
-def calcular_score_geografia_p02(estado_empresa: str, estados_seleccionados: list) -> Tuple[float, str]:
-    """
-    Función pura P0.2 para evaluación geográfica.
-    Retorna: (geo_score, estatus_geo)
-    """
-    if "TODAS LAS ENTIDADES" in estados_seleccionados or not estados_seleccionados:
-        # Criterio Neutral: No discrimina por territorio en esta corrida
-        return 100.0, "GEO_NEUTRAL"
-    
-    if estado_coincide(estado_empresa, estados_seleccionados):
-        return 100.0, "COINCIDENCIA_GEOGRAFICA"
-    else:
-        return 0.0, "FUERA_DE_CORREDOR"
 
-# --------------------------- Carga de configuraciones por cliente ---------------------------
-def cargar_configs():
+def normalize_str(val: str) -> str:
+    """Normaliza cadenas quitando acentos y espacios extra para matching robusto."""
+    if not isinstance(val, str):
+        return ""
+    val = val.strip().lower()
+    return "".join(
+        c for c in unicodedata.normalize("NFD", val)
+        if unicodedata.category(c) != "Mn"
+    )
+
+
+def cargar_configuraciones() -> dict:
+    """Carga todos los archivos JSON presentes en configs/."""
     configs = {}
-    for path in sorted(glob.glob(os.path.join(CONFIG_DIR, "*.json"))):
-        with open(path, encoding="utf-8") as f:
-            cfg = json.load(f)
-        configs[cfg.get("cliente", os.path.basename(path))] = cfg
+    pattern = os.path.join(CONFIG_DIR, "*.json")
+    for filepath in glob.glob(pattern):
+        filename = os.path.basename(filepath)
+        key = os.path.splitext(filename)[0]
+        try:
+            with open(filepath, "r", encoding="utf-8") as f:
+                configs[key] = json.load(f)
+        except Exception as e:
+            st.error(f"Error al cargar {filename}: {e}")
     return configs
 
 
-def _normaliza(texto):
-    if not texto:
-        return ""
-    texto = str(texto).strip().upper()
-    return "".join(c for c in unicodedata.normalize("NFD", texto) if unicodedata.category(c) != "Mn")
+def identificar_columnas(df: pd.DataFrame) -> dict:
+    """Detecta dinámicamente qué columnas del DataFrame corresponden a las variables del Motor."""
+    columnas_lower = {normalize_str(col): col for col in df.columns}
+    mapping = {}
+    for std_col, aliases in COL_ALIASES.items():
+        matched = None
+        for alias in aliases:
+            norm_alias = normalize_str(alias)
+            if norm_alias in columnas_lower:
+                matched = columnas_lower[norm_alias]
+                break
+        mapping[std_col] = matched
+    return mapping
 
 
-ALIAS_ESTADOS = {
-    "CIUDAD DE MEXICO": ["CIUDAD DE MEXICO", "DISTRITO FEDERAL", "CDMX"],
-    "ESTADO DE MEXICO": ["MEXICO", "ESTADO DE MEXICO"],
-    "COAHUILA": ["COAHUILA", "COAHUILA DE ZARAGOZA"],
-    "VERACRUZ": ["VERACRUZ", "VERACRUZ DE IGNACIO DE LA LLAVE"],
-    "MICHOACAN": ["MICHOACAN", "MICHOACAN DE OCAMPO"],
-}
+def detectar_capacidad_propia(df: pd.DataFrame, col_nom: Optional[str], col_raz: Optional[str], marcas_excluir: list) -> pd.Series:
+    """
+    P0.4: Genera una bandera booleana / texto indicando si el registro tiene
+    capacidad logística propia probable, SIN eliminarlo del DataFrame.
+    """
+    if not marcas_excluir:
+        return pd.Series(["No"] * len(df), index=df.index)
+
+    marcas_norm = [normalize_str(m) for m in marcas_excluir if m]
+
+    def check_row(row):
+        txt_nom = normalize_str(row[col_nom]) if col_nom and col_nom in row and pd.notna(row[col_nom]) else ""
+        txt_raz = normalize_str(row[col_raz]) if col_raz and col_raz in row and pd.notna(row[col_raz]) else ""
+        combined = f"{txt_nom} {txt_raz}"
+        for marca in marcas_norm:
+            if marca in combined:
+                return "Sí"
+        return "No"
+
+    return df.apply(check_row, axis=1)
 
 
-def estado_coincide(estado_dato, estados_objetivo):
-    """Compara el estado de una empresa contra la lista de estados objetivo,
-    usando la tabla de alias para nombres oficiales largos del DENUE."""
-    dato_norm = _normaliza(estado_dato)
-    for objetivo in estados_objetivo:
-        obj_norm = _normaliza(objetivo)
-        variantes = ALIAS_ESTADOS.get(obj_norm, [obj_norm])
-        if any(_normaliza(v) == dato_norm for v in variantes):
-            return True
-    return False
+def calcular_score_tamano_p01(val) -> float:
+    """
+    P0.1: Sensibilidad de scoring por estrato de empleados (DENUE).
+    Calcula una afinidad continua/escalonada según la cercanía al tamaño objetivo.
+    """
+    if pd.isna(val):
+        return 0.0
 
-
-CONFIGS = cargar_configs()
-if not CONFIGS:
-    st.error(
-        "No se encontró ningún archivo de configuración en la carpeta 'configs/'. "
-        "Agrega al menos un archivo JSON (por ejemplo configs/consede.json) con la matriz del cliente."
-    )
-    st.stop()
-
-# --------------------------- Sidebar: selector de cliente ---------------------------
-st.sidebar.title("Matriz de Control")
-cliente_sel = st.sidebar.selectbox("Cliente / matriz activa", list(CONFIGS.keys()))
-CFG = CONFIGS[cliente_sel]
-st.sidebar.caption(f"{CFG.get('descripcion', '')}")
-st.sidebar.caption("¿Cliente nuevo? Agrega un archivo .json en la carpeta configs/ con su propia matriz — no se toca este código.")
-st.sidebar.markdown("---")
-
-SECTORES = CFG["sectores"]
-SECTORES_AFINES = set(CFG.get("sectores_afines", []))
-NECESIDADES = CFG["necesidades"]
-NECESIDADES_AFINES = set(CFG.get("necesidades_afines", []))
-MARCAS_EXCLUIR = CFG.get("marcas_excluir", [])
-MADUREZ = ["Bajo", "Medio", "Alto", "Por confirmar"]
-DIAG = CFG.get("diagnostico_madurez")
-
-DEMO = pd.DataFrame([
-    ["Empresa Semilla A", "Agroindustria", 320, "Guanajuato", "Alto", "Almacenaje alto volumen", 1800000],
-    ["Empresa Semilla B", "Consumo masivo", 180, "Nuevo León", "Medio", "Transporte terrestre", 950000],
-    ["Empresa Semilla C", "Logística", 520, "Veracruz", "Alto", "Operación In-House", 2400000],
-    ["Empresa Semilla D", "Servicios profesionales", 45, "CDMX", "Bajo", "Flete aislado", 120000],
-    ["Empresa Semilla E", "Retail / Mayoristas", 95, "Querétaro", "Medio", "Picking y etiquetado", 680000],
-    ["Empresa Semilla F", "Agroindustria", 28, "Colima", "Bajo", "Mensajería", 90000],
-    ["Empresa Semilla G", "CPG / Consumo", 450, "Coahuila", "Alto", "Transporte intermodal", 2100000],
-    ["Empresa Semilla H", "Fertilizantes", 250, "Tamaulipas", "Medio", "Almacenaje de sacos", 1300000],
-    ["Empresa Semilla I", "Automotriz", 700, "Jalisco", "Alto", "Operación In-House", 1750000],
-    ["Empresa Semilla J", "Comercio minorista local", 12, "Oaxaca", "Bajo", "Flete aislado", 60000],
-], columns=["Empresa", "Sector", "Empleados", "Estado", "Madurez", "Necesidad", "Valor potencial MXN"])
-
-
-# --------------------------- Mapeo automático de DENUE crudo ---------------------------
-def es_denue(columnas):
-    cols = {c.strip().lower() for c in columnas}
-    return "nom_estab" in cols or "nombre_act" in cols
-
-
-def mapea_denue(df_crudo):
-    df = df_crudo.copy()
-    df.columns = [c.strip().lower() for c in df.columns]
-    empresa = df.get("nom_estab", pd.Series([""] * len(df))).fillna("")
-    razon = df.get("raz_social", pd.Series([""] * len(df))).fillna("")
-    empresa = empresa.where(empresa.str.strip() != "", razon)
-    out = pd.DataFrame({
-        "Empresa": empresa,
-        "Sector": df.get("nombre_act", ""),
-        "Empleados": df.get("per_ocu", ""),
-        "Estado": df.get("entidad", ""),
-        "Madurez": "Por confirmar",
-        "Necesidad": "",
-        "Valor potencial MXN": 0,
-    })
-    return out
-
-
-def _parsea_empleados(valor):
-    if pd.isna(valor) or valor == "":
-        return 0
-    texto = str(valor).strip()
-    try:
-        return float(texto)
-    except ValueError:
-        pass
-    t = _normaliza(texto)
-    numeros = [int(n) for n in t.replace("A", " ").split() if n.isdigit()]
-    if "Y MAS" in t:
-        return float(numeros[0]) if numeros else 0
-    if len(numeros) >= 2:
-        return (numeros[0] + numeros[1]) / 2
-    if len(numeros) == 1:
-        return float(numeros[0])
-    return 0
-
-
-def clasifica_sector_denue(rama_texto):
-    """Aproxima el Sector (categoria de la matriz) a partir del texto libre de
-    actividad economica del DENUE."""
-    t = _normaliza(rama_texto)
-    descalificadores = [
-        "DISTRIBUCION DE ENERGIA", "DISTRIBUCION DE AGUA", "CONSTRUCCION DE OBRAS",
-        "TRATAMIENTO DE AGUAS", "SUBESTACION", "SISTEMAS DE RIEGO", "PERFORACIONES",
-        "OBRAS PARA EL TRATAMIENTO", "RESTAURANTE", "PREPARACION DE ALIMENTOS PARA CONSUMO",
-        "SERVICIOS DE PREPARACION DE ALIMENTOS", "CAFETERIA", "COMEDOR",
-    ]
-    for kw in descalificadores:
-        if kw in t:
-            return "Otro"
-    mapa = {
-        "Agroindustria": ["AZUCAR", "INGENIO", "GRANO", "FERTILIZANTE", "AGROINDUSTR", "SEMILLA", "AGRICOLA"],
-        "CPG / Consumo": ["ALIMENTO", "BEBIDA", "CONSUMO", "PRODUCTOS DE ASEO", "HIGIENE", "PAPEL", "COSMETIC"],
-        "Retail / Mayoristas": ["COMERCIO AL POR MAYOR", "MAYORISTA", "DISTRIBUCION DE ALIMENTOS",
-                                 "DISTRIBUCION COMERCIAL", "DISTRIBUCION DE MERCANCIAS",
-                                 "DISTRIBUCION DE PRODUCTOS", "CENTRAL DE ABASTO"],
-        "Logística": ["AUTOTRANSPORTE", "TRANSPORTE DE CARGA", "ALMACENAMIENTO", "ALMACEN GENERAL",
-                       "LOGISTIC", "AGENCIA ADUANAL", "TRANSPORTE FERROVIARIO", "FLETE", "FORWARDER"],
-        "Fertilizantes": ["FERTILIZANTE"],
-        "Servicios profesionales": ["SERVICIOS PROFESIONALES", "CONSULTORIA", "DESPACHO", "ASESORIA"],
-        "Comercio minorista local": ["COMERCIO AL POR MENOR", "TIENDA DE ABARROTES", "MINISUPER"],
-    }
-    for sector, kws in mapa.items():
-        for kw in kws:
-            if kw in t:
-                return sector
-    return "Otro"
-
-
-# --------------------------- Scoring P0.1 y P0.2 ---------------------------
-def score_row(r, target, weights):
-    if r["Sector"] in SECTORES_AFINES:
-        sector = 100
-    elif r["Sector"] == target["sector"]:
-        sector = 100
+    s = str(val).upper()
+    if any(m in s for m in ["0 A 5", "1 A 5", "0 A 5 PERSONAS", "0-5"]):
+        return 0.0
+    elif any(m in s for m in ["6 A 10", "6-10", "6 A 10 PERSONAS"]):
+        return 40.0
+    elif any(m in s for m in ["11 A 30", "11-30", "11 A 30 PERSONAS"]):
+        return 65.0
+    elif any(m in s for m in ["31 A 50", "31-50", "31 A 50 PERSONAS"]):
+        return 85.0
+    elif any(m in s for m in ["51 A 100", "51-100", "51 A 100 PERSONAS"]):
+        return 100.0
+    elif any(m in s for m in ["101 A 250", "101-250", "101 A 250 PERSONAS"]):
+        return 90.0
+    elif any(m in s for m in ["251 Y MÁS", "251 Y MAS", "251+", "251 EN ADELANTE"]):
+        return 75.0
     else:
-        sector = 0
-
-    # Integración Quirúrgica P0.1: Sensibilidad de tamaño
-    size_score, flag_techo, estatus_tam = calcular_score_tamano_p01(
-        r["Empleados"], 
-        target.get("empleados_min", 50), 
-        target.get("empleados_max", 250)
-    )
-    size_val = size_score if size_score is not None else 0.0
-
-    # Integración Quirúrgica P0.2: Evaluacion geográfica
-    geo_val, estatus_geo = calcular_score_geografia_p02(r["Estado"], target.get("estados", []))
-
-    need = 100 if r["Necesidad"] in NECESIDADES_AFINES else (50 if r["Necesidad"] == "" else 0)
-    denom = sum(weights.values()) or 1
-    return round((sector * weights["Sector"] + size_val * weights["Tamaño"] + geo_val * weights["Geografía"] + need * weights["Necesidad"]) / denom, 1)
-
-
-def es_marca_excluida(nombre_empresa):
-    t = _normaliza(nombre_empresa)
-    for marca in MARCAS_EXCLUIR:
-        if _normaliza(marca) in t:
-            return marca
-    return None
-
-
-def classify(r):
-    if r["Match Score"] >= CFG["umbral_aaa"] and r["Necesidad"] in NECESIDADES_AFINES:
-        return "Alineación total"
-    if r["Match Score"] >= CFG["umbral_aa"] and r["Madurez"] in ["Bajo", "Medio", "Por confirmar"]:
-        return "Alto valor / madurez por desarrollar"
-    if r["Match Score"] < CFG["umbral_baja"]:
-        return "Baja alineación"
-    return "Cuenta oportunista"
-
-
-# --------------------------- Sidebar: perfil objetivo y pesos ---------------------------
-st.sidebar.caption("Ajusta el perfil objetivo y los pesos. Cambios recalculan el análisis.")
-idx_sector = SECTORES.index(CFG["sector_objetivo_default"]) if CFG["sector_objetivo_default"] in SECTORES else 0
-sector_obj = st.sidebar.selectbox("Sector / industria objetivo", SECTORES, index=idx_sector)
-emp_min, emp_max = st.sidebar.slider("Rango de empleados", 1, 5000, tuple(CFG["empleados_rango_default"]), step=10)
-
-# P0.2 - Selector Geográfico Objetivo (Catálogo Oficial Nacional de 32 Entidades + TODAS)
-estados_obj = st.sidebar.multiselect(
-    "Estados / corredores objetivo", 
-    CATALOGO_ENTIDADES_MEXICO, 
-    default=["Guanajuato"]
-)
-
-presupuesto = st.sidebar.number_input(
-    "Ticket promedio por cuenta cerrada (MXN)", min_value=0, value=69600, step=5000,
-    help="Valor unitario/contrato estimado por cuenta AAA. (Ej. $69,600 MXN para fletes/servicios unitarios)."
-)
-
-st.sidebar.markdown("---")
-st.sidebar.subheader("Ponderación de la matriz")
-pd_ = CFG["pesos_default"]
-w_sector = st.sidebar.slider("Sector / rama", 1, 10, pd_["Sector"])
-w_tamano = st.sidebar.slider("Tamaño de empresa", 1, 10, pd_["Tamaño"])
-w_geo = st.sidebar.slider("Geografía / rutas", 1, 10, pd_["Geografía"])
-w_nec = st.sidebar.slider("Requerimiento operativo", 1, 10, pd_["Necesidad"])
-weights = {"Sector": w_sector, "Tamaño": w_tamano, "Geografía": w_geo, "Necesidad": w_nec}
-
-suma_pesos = sum(weights.values()) or 1
-st.sidebar.markdown(
-    "".join(
-        f'<div class="peso-pct">{k}: {v} → {v/suma_pesos*100:.0f}% del peso total</div>'
-        for k, v in weights.items()
-    ),
-    unsafe_allow_html=True,
-)
-st.sidebar.caption("Los pesos se normalizan automáticamente para sumar 100%, sin importar los valores de los sliders.")
-
-st.sidebar.markdown("---")
-uploaded = st.sidebar.file_uploader("Cargar cartera real (CSV o Excel)", type=["csv", "xlsx"])
-
-# --------------------------- Estado de sesión ---------------------------
-fuente_actual = uploaded.name if uploaded else f"DEMO::{cliente_sel}"
-if st.session_state.get("_fuente") != fuente_actual:
-    st.session_state["_fuente"] = fuente_actual
-    if uploaded:
         try:
-            if uploaded.name.lower().endswith(".csv"):
-                try:
-                    df_crudo = pd.read_csv(uploaded, usecols=lambda c: c.strip().lower() in COLS_DENUE or c in ["Empresa", "Sector", "Empleados", "Estado"], encoding="utf-8")
-                except Exception:
-                    uploaded.seek(0)
-                    df_crudo = pd.read_csv(uploaded, usecols=lambda c: c.strip().lower() in COLS_DENUE or c in ["Empresa", "Sector", "Empleados", "Estado"], encoding="latin-1")
-            else:
-                df_crudo = pd.read_excel(uploaded)
-            
-            if es_denue(df_crudo.columns):
-                st.sidebar.info("Formato DENUE detectado — mapeando Empresa, Sector, Empleados y Estado automáticamente.")
-                data = mapea_denue(df_crudo)
-                data["Sector"] = data["Sector"].apply(clasifica_sector_denue)
-                excluidas = data["Empresa"].apply(es_marca_excluida)
-                n_excl = excluidas.notna().sum()
-                
-                # P0.4: Reinserción de grandes corporativos con Señal Comercial
-                data["Capacidad_Propia_Probable"] = excluidas.notna()
-                data["Señal: Capacidad propia probable"] = np.where(data["Capacidad_Propia_Probable"], "Sí", "No")
-                st.sidebar.success(f"{len(data):,} registros cargados ({n_excl:,} con 'Señal: Capacidad propia probable').")
-            else:
-                required = {"Empresa", "Sector", "Empleados", "Estado"}
-                missing = required - set(df_crudo.columns)
-                if missing:
-                    st.sidebar.error("Faltan columnas obligatorias: " + ", ".join(sorted(missing)))
-                    data = DEMO.copy()
-                else:
-                    data = df_crudo.copy()
-                    for opc, default in [("Madurez", "Por confirmar"), ("Necesidad", ""), ("Valor potencial MXN", 0)]:
-                        if opc not in data.columns:
-                            data[opc] = default
-                    data["Capacidad_Propia_Probable"] = False
-                    data["Señal: Capacidad propia probable"] = "No"
-                    st.sidebar.success(f"{len(data):,} registros cargados.")
-        except Exception as e:
-            st.sidebar.error(f"No se pudo leer el archivo: {e}")
-            data = DEMO.copy()
-    else:
-        data = DEMO.copy()
-        data["Capacidad_Propia_Probable"] = False
-        data["Señal: Capacidad propia probable"] = "No"
-    st.session_state["cartera"] = data
+            num = float(val)
+            if num <= 5: return 0.0
+            elif num <= 10: return 40.0
+            elif num <= 30: return 65.0
+            elif num <= 50: return 85.0
+            elif num <= 100: return 100.0
+            elif num <= 250: return 90.0
+            else: return 75.0
+        except ValueError:
+            return 50.0
 
-data = st.session_state["cartera"].copy()
 
-# --------------------------- Normalización de tipos ---------------------------
-for c in ["Valor potencial MXN"]:
-    data[c] = pd.to_numeric(data[c], errors="coerce").fillna(0)
-data["Sector"] = data["Sector"].fillna("Otro").astype(str)
-data["Estado"] = data["Estado"].fillna("").astype(str)
-data["Madurez"] = data["Madurez"].fillna("Por confirmar").astype(str)
-data["Necesidad"] = data["Necesidad"].fillna("").astype(str)
+def parse_empleados_num_p02_h1(val) -> int:
+    """P0.2-H1: Convierte texto de estrato DENUE a entero representativo para evitar TypeError en Plotly."""
+    if pd.isna(val):
+        return 0
+    s = str(val).upper()
+    if "0 A 5" in s: return 3
+    if "6 A 10" in s: return 8
+    if "11 A 30" in s: return 20
+    if "31 A 50" in s: return 40
+    if "51 A 100" in s: return 75
+    if "101 A 250" in s: return 175
+    if "251" in s: return 300
+    try:
+        return int(float(val))
+    except ValueError:
+        return 10
 
-target = {"sector": sector_obj, "empleados_min": emp_min, "empleados_max": emp_max, "estados": estados_obj}
-data["Match Score"] = data.apply(lambda r: score_row(r, target, weights), axis=1)
 
-# Banderas P0.1 informativas en el DataFrame
-res_p01 = data["Empleados"].apply(lambda e: calcular_score_tamano_p01(e, emp_min, emp_max))
-data["Flag_Techo_DENUE"] = [r[1] for r in res_p01]
-data["Estatus_Tamaño"] = [r[2] for r in res_p01]
+def calcular_score_sector(val, sectores_afines: list) -> float:
+    if pd.isna(val) or not sectores_afines:
+        return 50.0
+    val_norm = normalize_str(str(val))
+    for sec in sectores_afines:
+        if normalize_str(sec) in val_norm:
+            return 100.0
+    return 30.0
 
-# Banderas P0.2 informativas en el DataFrame
-res_p02 = data["Estado"].apply(lambda e: calcular_score_geografia_p02(e, estados_obj))
-data["Estatus_Geografía"] = [r[1] for r in res_p02]
 
-data["Clasificación"] = data.apply(classify, axis=1)
-data["Prioridad"] = np.select([data["Match Score"] >= CFG["umbral_aaa"], data["Match Score"] >= CFG["umbral_aa"]], ["AAA", "AA"], default="Validar")
-data = data.sort_values("Match Score", ascending=False).reset_index(drop=True)
+def calcular_score_geografia_p02(val, estados_seleccionados: list) -> float:
+    """P0.2: Scoring geográfico nacional con soporte multiselección y GEO_NEUTRAL."""
+    if not estados_seleccionados or "TODAS LAS ENTIDADES" in estados_seleccionados or "GEO_NEUTRAL" in estados_seleccionados:
+        return 100.0
+    if pd.isna(val):
+        return 20.0
+    val_norm = normalize_str(str(val))
+    for est in estados_seleccionados:
+        target_norm = normalize_str(est)
+        if target_norm in val_norm or val_norm in target_norm:
+            return 100.0
+    return 20.0
 
-# --------------------------- Main dashboard ---------------------------
-st.title(f"🎯 {cliente_sel} | Motor de Generación de Demanda")
-st.caption("Explorador de afinidad de cuentas · Prototipo interactivo 4MSFTS")
-if uploaded is None:
-    st.warning("Estás viendo DATOS DE EJEMPLO (ficticios). Carga un CSV real en la barra lateral para ver resultados reales.", icon="⚠️")
-st.info("El puntaje es una simulación basada en los campos disponibles. La matriz no aporta datos suficientes para deducir necesidad real, facturación, decisor ni presupuesto por empresa: esos puntos deben confirmarse en llamada.")
 
-# P0.3 - Panel de Métricas del Embudo Comercial
-total_registros = len(data)
-afinidad_promedio = data["Match Score"].mean() if total_registros > 0 else 0.0
-n_aaa = (data["Prioridad"] == "AAA").sum()
-penetracion_aaa = (n_aaa / total_registros * 100) if total_registros > 0 else 0.0
-pipeline_estimado = n_aaa * presupuesto
+def procesar_scoring(df: pd.DataFrame, mapping: dict, config: dict, estados_sel: list) -> pd.DataFrame:
+    """
+    Ejecuta el pipeline entero de scoring P0.1, P0.2 y P0.4 sobre el DataFrame.
+    """
+    res = df.copy()
 
-col1, col2, col3, col4 = st.columns(4)
-col1.metric("Universo Analizado", f"{total_registros:,}")
-col2.metric("Índice de Afinidad Promedio", f"{afinidad_promedio:.1f} / 100")
-col3.metric("Cuentas AAA (Alta Prioridad)", f"{n_aaa:,}")
-col4.metric("Penetración AAA", f"{penetracion_aaa:.2f}%")
+    col_nom = mapping.get("nom_estab")
+    col_raz = mapping.get("raz_social")
+    col_act = mapping.get("nombre_act")
+    col_emp = mapping.get("per_ocu")
+    col_ent = mapping.get("entidad")
 
-st.metric("Pipeline potencial estimado", f"${pipeline_estimado:,.0f} MXN", help="Cuentas AAA × ticket promedio capturado arriba.")
+    # P0.4: Señal de capacidad propia probable
+    marcas_excluir = config.get("marcas_excluir_capacidad_propia", [])
+    res["Señal: Capacidad propia probable"] = detectar_capacidad_propia(res, col_nom, col_raz, marcas_excluir)
 
-# --------------------------- Diagnóstico de Madurez ---------------------------
-if DIAG:
-    with st.expander("🧪 Diagnóstico de Madurez — " + DIAG["titulo"]):
-        st.caption(DIAG["objetivo"])
-        empresa_diag = st.selectbox("Empresa a diagnosticar", data["Empresa"].tolist(), key="empresa_diag")
-        respuestas = []
-        for i, preg in enumerate(DIAG["preguntas"]):
-            resp = st.select_slider(
-                preg["texto"], options=list(DIAG["escala"].keys()),
-                value="Ni de acuerdo ni en desacuerdo" if "Ni de acuerdo ni en desacuerdo" in DIAG["escala"] else list(DIAG["escala"].keys())[2],
-                key=f"diag_{i}",
-            )
-            respuestas.append(DIAG["escala"][resp] * preg["peso"])
-        score_diag = sum(respuestas)
-        banda = next(b for b in DIAG["bandas"] if score_diag <= b["max"])
-        st.markdown(f"**Resultado: {score_diag:.2f} / 5 — {banda['etiqueta']}** ({banda['madurez']})")
-        st.caption(banda["detalle"])
-        if st.button("Guardar este resultado como Madurez de la empresa"):
-            idx = st.session_state["cartera"].index[st.session_state["cartera"]["Empresa"] == empresa_diag]
-            st.session_state["cartera"].loc[idx, "Madurez"] = banda["madurez"]
-            st.success(f"Madurez de '{empresa_diag}' actualizada a '{banda['madurez']}'. Vuelve a correr el análisis arriba ↑")
-            st.rerun()
+    # P0.2-H1: Columna numérica auxiliar para gráficos Plotly
+    res["Empleados_Num"] = res[col_emp].apply(parse_empleados_num_p02_h1) if col_emp and col_emp in res.columns else 10
 
-st.markdown("### Matriz de oportunidades")
+    # Scores individuales
+    sectores_afines = config.get("sectores_afines", [])
+    res["Score_Sector"] = res[col_act].apply(lambda x: calcular_score_sector(x, sectores_afines)) if col_act and col_act in res.columns else 50.0
+    res["Score_Tamano"] = res[col_emp].apply(calcular_score_tamano_p01) if col_emp and col_emp in res.columns else 50.0
+    res["Score_Geografia"] = res[col_ent].apply(lambda x: calcular_score_geografia_p02(x, estados_sel)) if col_ent and col_ent in res.columns else 100.0
+    res["Score_Necesidad"] = 50.0  # Baseline neutro
 
-# HOTFIX P0.2-H1: Columna numérica auxiliar exclusivamente para renderizado de Plotly
-data["Empleados_Num"] = data["Empleados"].apply(_parsea_empleados)
+    # Ponderación
+    pesos = config.get("pesos_defecto", {"sector": 35, "tamano": 25, "geografia": 25, "necesidad": 15})
+    w_sec = pesos.get("sector", 35) / 100.0
+    w_tam = pesos.get("tamano", 25) / 100.0
+    w_geo = pesos.get("geografia", 25) / 100.0
+    w_nec = pesos.get("necesidad", 15) / 100.0
 
-left, right = st.columns([3, 1])
-with left:
-    fig = px.scatter(
-        data, 
-        x="Match Score", 
-        y="Valor potencial MXN", 
-        color="Clasificación",
-        size="Empleados_Num",  # <--- HOTFIX P0.2-H1
-        hover_name="Empresa",
-        hover_data=[
-            "Sector", "Estado", "Empleados", "Madurez", "Necesidad", 
-            "Prioridad", "Estatus_Tamaño", "Estatus_Geografía", "Señal: Capacidad propia probable"
-        ],
-        range_x=[0, 100], 
-        title="Afinidad vs. valor potencial"
+    res["Match Score"] = (
+        res["Score_Sector"] * w_sec +
+        res["Score_Tamano"] * w_tam +
+        res["Score_Geografia"] * w_geo +
+        res["Score_Necesidad"] * w_nec
     )
-    fig.add_vline(x=CFG["umbral_aaa"], line_dash="dash", annotation_text=f"Umbral AAA ({CFG['umbral_aaa']}%)")
-    fig.add_vline(x=CFG["umbral_aa"], line_dash="dot", annotation_text=f"Umbral AA ({CFG['umbral_aa']}%)")
-    fig.update_layout(height=480, xaxis_title="Match Score (%)", yaxis_title="Valor potencial estimado (MXN)")
-    st.plotly_chart(fig, width='stretch')
-with right:
-    st.markdown("**Lectura de cuadrantes**")
-    st.markdown("- **Alineación total:** score alto y necesidad logística pertinente.")
-    st.markdown("- **Alto valor / madurez por desarrollar:** score medio-alto y madurez baja/media/sin confirmar.")
-    st.markdown("- **Baja alineación:** score bajo.")
-    st.markdown("- **Oportunista:** resto; validar antes de priorizar.")
-    st.caption("Clasificación operativa ilustrativa; no equivale a oportunidad confirmada.")
 
-st.markdown("### Tabla dinámica de cuentas")
-c1, c2, c3 = st.columns(3)
-with c1:
-    clas_sel = st.multiselect("Clasificación", sorted(data["Clasificación"].unique()), default=sorted(data["Clasificación"].unique()))
-with c2:
-    min_score = st.slider("Match mínimo", 0, 100, 0)
-with c3:
-    # Filtro dinámico de la tabla vista (basado únicamente en los estados presentes en el DataFrame activo)
-    estados_presentes = sorted([e for e in data["Estado"].unique() if str(e).strip() != ""])
-    estado_sel = st.multiselect("Estado (Filtro Vista)", estados_presentes, default=estados_presentes)
+    # Categorización AAA / AA / A
+    umb = config.get("umbrales", {"AAA": 75, "AA": 55})
+    u_aaa = umb.get("AAA", 75)
+    u_aa = umb.get("AA", 55)
 
-view = data[data["Clasificación"].isin(clas_sel) & (data["Match Score"] >= min_score) & data["Estado"].isin(estado_sel)].copy()
+    def categorizar(s):
+        if s >= u_aaa: return "AAA"
+        if s >= u_aa: return "AA"
+        return "A"
 
-st.dataframe(view, width='stretch', hide_index=True)
+    res["Categoria"] = res["Match Score"].apply(categorizar)
+    return res
 
-csv = view.to_csv(index=False).encode("utf-8-sig")
-st.download_button("⬇️ Descargar resultados CSV", data=csv, file_name=f"{cliente_sel}_cuentas_priorizadas.csv", mime="text/csv")
-excel_buffer = io.BytesIO()
-with pd.ExcelWriter(excel_buffer, engine="openpyxl") as writer:
-    view.to_excel(writer, index=False, sheet_name="Cuentas priorizadas")
-st.download_button("⬇️ Descargar resultados Excel", data=excel_buffer.getvalue(), file_name=f"{cliente_sel}_cuentas_priorizadas.xlsx",
-                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
 
-with st.expander("Reglas del juego y limitaciones"):
-    st.markdown(f"""
-    - Matriz activa: **{cliente_sel}**, cargada desde `configs/{cliente_sel.lower()}.json`.
-    - Pesos iniciales: Sector {pd_['Sector']}, Tamaño {pd_['Tamaño']}, Geografía {pd_['Geografía']}, Necesidad {pd_['Necesidad']} — normalizados a 100%.
-    - Carga optimizada para DENUE: extrae columnas clave para minimizar uso de memoria RAM.
-    - Las marcas corporativas con infraestructura propia se reincorporan con 'Señal: Capacidad propia probable' para validación comercial.
-    """)
+def render_p03_funnel_panel(df_raw, df_elegibles, umbral_aaa, ticket_promedio):
+    """
+    Renderiza el panel de métricas del Funnel Comercial (P0.3).
+    Garantiza trazabilidad dinámica del universo de referencia sin hardcoding.
+    """
+    # Nivel 1: Universo DENUE de Referencia (CSV Crudo)
+    universo_referencia_denue = len(df_raw)
+    
+    # Nivel 2: Universo Elegible por Tamaño (>= 6 empleados)
+    universo_elegible_tamano = len(df_elegibles)
+    
+    # Nivel 3 a 6: Cálculos sobre Universo Elegible usando campo nativo 'Match Score'
+    afinidad_promedio = df_elegibles['Match Score'].mean() if universo_elegible_tamano > 0 else 0.0
+    cuentas_aaa = len(df_elegibles[df_elegibles['Match Score'] >= umbral_aaa])
+    penetracion_aaa = (cuentas_aaa / universo_elegible_tamano * 100) if universo_elegible_tamano > 0 else 0.0
+    pipeline_potencial = cuentas_aaa * ticket_promedio
 
-st.markdown('<div class="small-note">4MSFTS · Menos es más · Evidencia antes de tecnología</div>', unsafe_allow_html=True)
+    st.subheader("📊 Funnel de Inteligencia Comercial")
+    
+    col1, col2, col3 = st.columns(3)
+    with col1:
+        st.metric("1. Universo DENUE Referencia", f"{universo_referencia_denue:,} registros DENUE", 
+                  help="Total de registros/unidades económicas del archivo crudo INEGI.")
+    with col2:
+        st.metric("2. Universo Elegible Tamaño", f"{universo_elegible_tamano:,} registros elegibles",
+                  help="Registros con 6 o más personas ocupadas.")
+    with col3:
+        st.metric("3. Índice Afinidad Promedio", f"{afinidad_promedio:.1f} / 100",
+                  help="Calculado sobre el universo elegible por tamaño.")
+
+    col4, col5, col6 = st.columns(3)
+    with col4:
+        st.metric("4. Cuentas Alta Prioridad (AAA)", f"{cuentas_aaa:,}")
+    with col5:
+        st.metric("5. Penetración AAA", f"{penetracion_aaa:.2f}%")
+    with col6:
+        st.metric("6. Pipeline Potencial Estimado", f"${pipeline_potencial:,.2f} MXN")
+
+    st.caption(
+        "**Notas metodológicas:**\n"
+        "• **Universo de referencia:** Registros DENUE cargados en la corrida.\n"
+        "• **Universo elegible por tamaño:** Registros con 6 o más personas ocupadas (0-5 fuera del universo elegible).\n"
+        "• **Afinidad:** Índice relativo de alineación con el perfil objetivo (Match Score); no implica intención de compra.\n"
+        "• **Pipeline:** Estimación matemática basada en ticket configurado ($69,600 MXN); requiere validación comercial."
+    )
+
+
+def generar_datos_ejemplo() -> pd.DataFrame:
+    """Genera dataset mock para validación de UI cuando no hay archivo cargado."""
+    return pd.DataFrame({
+        "nom_estab": ["Logística del Bajío", "Manufacturas León", "Plásticos Silao", "Textiles Irapuato", "Calzado Celaya", "Transportes Querétaro", "Empaques Romita", "Sistemas San Fe", "Comercial San Miguel", "Distribuidora Salamanca"],
+        "raz_social": ["Logística Bajío SA de CV", "Manufacturas León S de RL", "Plásticos Silao SA", "Textiles Irapuato SA de CV", "Calzado Celaya SA", "Transportes Querétaro SA de CV", "Bimbo de México SA de CV", "Sistemas San Fe SA", "Walmart de México SAB", "Distribuidora Salamanca SA"],
+        "nombre_act": ["Autotransporte de carga general", "Fabricación de partes de vehículos", "Fabricación de productos de plástico", "Fabricación de prendas de vestir", "Fabricación de calzado", "Servicios de almacenamiento", "Fabricación de envases de cartón", "Comercio al por mayor", "Supermercados", "Comercio de abarrotes"],
+        "per_ocu": ["51 a 100 personas", "101 a 250 personas", "31 a 50 personas", "11 a 30 personas", "6 a 10 personas", "251 y más personas", "251 y más personas", "6 a 10 personas", "251 y más personas", "11 a 30 personas"],
+        "entidad": ["Guanajuato", "Guanajuato", "Guanajuato", "Guanajuato", "Guanajuato", "Querétaro", "Guanajuato", "Guanajuato", "Guanajuato", "Guanajuato"]
+    })
+
+
+def render_diagnostico_madurez():
+    """Módulo cualitativo de Diagnóstico de Madurez Operativa."""
+    st.subheader("📋 Diagnóstico de Madurez Operativa y Logística")
+    st.markdown("Avaliación cualitativa complementaria para la gestión telefónica / presencial de cuentas AA y AAA.")
+    
+    col1, col2 = st.columns(2)
+    with col1:
+        q1 = st.selectbox("1. ¿Cuenta con infraestructura de almacenamiento propia?", ["Sí, capacidad suficiente", "Sí, saturado / overflow", "No, subcontrata 100%"])
+        q2 = st.selectbox("2. ¿Flota de transporte asignada?", ["Propia completa", "Mixta", "Tercerizada / Búsqueda de proveedores"])
+    with col2:
+        q3 = st.selectbox("3. ¿Sistemas de gestión operativa (WMS/TMS/ERP)?", ["ERP + WMS/TMS integrado", "Básico / Excel", "Sin sistema automatizado"])
+        q4 = st.selectbox("4. ¿Nivel de urgencia / estacionalidad actual?", ["Alta (Temporada Pico / Urgente)", "Media (Planeación trimestral)", "Baja / Exploratoria"])
+        
+    st.text_area("Notas del Prospectador / SDR:", placeholder="Registrar comentarios de la llamada...")
+
+
+def main():
+    st.title("🎯 CONCEDE | Motor de Generación de Demanda")
+    st.markdown("<p class='small-note'>Entorno de Pruebas: Branch <b>motor-v2</b></p>", unsafe_allow_html=True)
+
+    configs = cargar_configuraciones()
+    if not configs:
+        st.error("No se encontraron archivos JSON de configuración en la carpeta configs/.")
+        st.stop()
+
+    # Sidebar: Selección de Cliente / Matriz
+    st.sidebar.header("🏢 Cliente Objetivo")
+    cliente_sel = st.sidebar.selectbox("Seleccionar Configuración:", list(configs.keys()))
+    config = configs[cliente_sel]
+
+    st.sidebar.divider()
+    st.sidebar.header("🌍 Cobertura Geográfica (P0.2)")
+
+    estados_sel = st.sidebar.multiselect(
+        "Entidades Federativas Objetivos:",
+        ESTADOS_MEXICO,
+        default=["TODAS LAS ENTIDADES"],
+        help="Selecciona una o más entidades. 'TODAS LAS ENTIDADES' aplica criterio neutral (100% en geografía)."
+    )
+
+    st.sidebar.divider()
+    st.sidebar.header("⚙️ Parámetros Comerciales")
+
+    ticket_prom = config.get("ticket_promedio", 69600.0)
+    ticket_input = st.sidebar.number_input("Ticket Promedio por Cuenta (MXN)", value=float(ticket_prom), step=5000.0, format="%.2f")
+
+    umb = config.get("umbrales", {"AAA": 75, "AA": 55})
+    umbral_aaa = st.sidebar.slider("Umbral Cuenta AAA", min_value=50.0, max_value=90.0, value=float(umb.get("AAA", 75)), step=5.0)
+
+    # Carga de Archivo DENUE
+    st.sidebar.divider()
+    st.sidebar.header("📁 Ingesta de Datos DENUE")
+    uploaded_file = st.sidebar.file_uploader("Cargar CSV / Excel de INEGI:", type=["csv", "xlsx"])
+
+    is_demo = False
+    if uploaded_file is not None:
+        try:
+            if uploaded_file.name.endswith(".csv"):
+                df_raw = pd.read_csv(uploaded_file, encoding="utf-8", low_memory=False)
+            else:
+                df_raw = pd.read_excel(uploaded_file)
+            st.success(f"Dataset cargado exitosamente: **{len(df_raw):,}** registros leídos.")
+        except Exception as e:
+            st.error(f"Error al leer el archivo: {e}")
+            st.stop()
+    else:
+        df_raw = generar_datos_ejemplo()
+        is_demo = True
+        st.info("💡 **Modo Demostración Activo:** Mostrando dataset de ejemplo (10 registros). Carga un archivo DENUE en la barra lateral para analizar datos reales.")
+
+    mapping = identificar_columnas(df_raw)
+
+    # Filtro de elegibilidad P0.3 (>= 6 personas)
+    col_emp = mapping.get("per_ocu")
+    if col_emp and col_emp in df_raw.columns:
+        df_elegibles = df_raw[df_raw[col_emp].apply(calcular_score_tamano_p01) > 0].copy()
+    else:
+        df_elegibles = df_raw.copy()
+
+    # Procesar Scoring P0.1, P0.2, P0.4
+    df_scored = procesar_scoring(df_elegibles, mapping, config, estados_sel)
+
+    # Render Panel P0.3
+    render_p03_funnel_panel(df_raw, df_scored, umbral_aaa, ticket_input)
+
+    st.divider()
+
+    # Pestañas de Análisis Completas
+    tab1, tab2, tab3, tab4 = st.tabs([
+        "📋 Matriz de Priorización", 
+        "📊 Gráficos & Dispersión", 
+        "📋 Diagnóstico de Madurez", 
+        "⚙️ Configuración & Diagnóstico"
+    ])
+
+    with tab1:
+        st.subheader("📋 Cartera de Cuentas Priorizadas")
+        
+        # Filtro rápido por Categoría
+        cats = st.multiselect("Filtrar por Categoría:", ["AAA", "AA", "A"], default=["AAA", "AA"])
+        df_show = df_scored[df_scored["Categoria"].isin(cats)].copy()
+
+        st.dataframe(
+            df_show.sort_values(by="Match Score", ascending=False),
+            use_container_width=True
+        )
+
+        # Descarga
+        csv = df_show.to_csv(index=False, encoding="utf-8-sig")
+        st.download_button(
+            label="📥 Descargar Cartera Filtrada (CSV)",
+            data=csv,
+            file_name=f"cartera_priorizada_{cliente_sel}.csv",
+            mime="text/csv"
+        )
+
+    with tab2:
+        st.subheader("📊 Análisis Espacial y Dispersión de Cuentas")
+        col_nom = mapping.get("nom_estab", "nom_estab")
+
+        # Fix P0.4: Pasa la señal al símbolo de forma segura si la columna está en df_scored
+        symbol_col = "Señal: Capacidad propia probable" if "Señal: Capacidad propia probable" in df_scored.columns else None
+
+        fig = px.scatter(
+            df_scored,
+            x="Match Score",
+            y="Empleados_Num",
+            color="Categoria",
+            symbol=symbol_col,
+            hover_name=col_nom if col_nom and col_nom in df_scored.columns else None,
+            title="Afinidad (Match Score) vs Tamaño de Empresa (Empleados)",
+            labels={"Empleados_Num": "Empleados Estimados", "Match Score": "Índice de Afinidad (0-100)"},
+            color_discrete_map={"AAA": "#0f766e", "AA": "#2563eb", "A": "#94a3b8"}
+        )
+        st.plotly_chart(fig, use_container_width=True)
+
+    with tab3:
+        render_diagnostico_madurez()
+
+    with tab4:
+        st.subheader("⚙️ Diagnóstico de Reglas de Negocio")
+        st.json(config)
+
+
+if __name__ == "__main__":
+    main()
