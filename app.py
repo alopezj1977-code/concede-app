@@ -347,7 +347,7 @@ def render_p03_funnel_panel(df_raw, df_elegibles, umbral_aaa, ticket_promedio):
     # Nivel 1: Universo DENUE de Referencia (CSV Crudo)
     universo_referencia_denue = len(df_raw)
     
-    # Nivel 2: Universo Elegible Target (>= 51 empleados)
+    # Nivel 2: Universo Elegible según Score_Tamano > 0 (reconciliación V1/P0.1)
     universo_elegible_tamano = len(df_elegibles)
     
     # Nivel 3 a 6: Cálculos sobre Universo Elegible usando campo nativo 'Match Score'
@@ -363,8 +363,8 @@ def render_p03_funnel_panel(df_raw, df_elegibles, umbral_aaa, ticket_promedio):
         st.metric("1. Universo DENUE Referencia", f"{universo_referencia_denue:,} registros DENUE", 
                   help="Total de registros/unidades económicas del archivo crudo INEGI.")
     with col2:
-        st.metric("2. Universo Elegible Target", f"{universo_elegible_tamano:,} registros elegibles",
-                  help="Registros con 51 o más personas ocupadas (empresas medianas y grandes).")
+        st.metric("2. Universo Elegible V1/P0.1", f"{universo_elegible_tamano:,} registros elegibles",
+                  help="Registros cuyo Score_Tamano P0.1 es mayor que cero.")
     with col3:
         st.metric("3. Índice Afinidad Promedio", f"{afinidad_promedio:.1f} / 100",
                   help="Calculado sobre el universo elegible target.")
@@ -380,7 +380,7 @@ def render_p03_funnel_panel(df_raw, df_elegibles, umbral_aaa, ticket_promedio):
     st.caption(
         "**Notas metodológicas:**\n"
         "• **Universo de referencia:** Registros DENUE cargados en la corrida.\n"
-        "• **Universo elegible target:** Registros con 51 o más personas ocupadas (0-50 fuera del universo elegible).\n"
+        "• **Universo elegible V1/P0.1:** Registros cuyo Score_Tamano P0.1 es mayor que cero.\n"
         "• **Afinidad:** Índice relativo de alineación con el perfil objetivo (Match Score); no implica intención de compra.\n"
         "• **Pipeline:** Estimación matemática basada en ticket configurado ($69,600 MXN); requiere validación comercial."
     )
@@ -483,7 +483,7 @@ def main():
 
     mapping = identificar_columnas(df_raw)
 
-    # Filtro de elegibilidad V1 / reconciliacion de benchmark
+    # Universo elegible reconciliado con la lógica V1/P0.1: Score_Tamano > 0.
     col_emp = mapping.get("per_ocu")
     if col_emp and col_emp in df_raw.columns:
         df_elegibles = df_raw[df_raw[col_emp].apply(calcular_score_tamano_p01) > 0].copy()
