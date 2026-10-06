@@ -1,0 +1,22 @@
+CONCEDE V3 FINAL — TEST RESULT
+
+Executed:
+python -m pytest -q tests/test_v3.py tests/test_v2_regression.py
+
+RESULT: 9 passed
+
+V3 checks:
+- 32 entities
+- P0.2 multiselect
+- Need without evidence = 0
+- unknown size => ConfigError
+- employee minimum is live
+- AAA/AA/VALIDAR = 80/60
+- Score weights = 35/25/10/30
+- Value Potential separated from Score
+
+V2 compatibility regression:
+296,441 raw -> 18,410 eligible -> 1,711 AAA -> $119,085,600
+
+STATUS: PASS
+BUSINESS PENDING ITEMS: NONE

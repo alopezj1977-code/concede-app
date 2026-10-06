@@ -1,0 +1,11 @@
+[
+  "tests/test_v2_regression.py::test_v2_baseline",
+  "tests/test_v3.py::test_catalog_32",
+  "tests/test_v3.py::test_classification_80_60",
+  "tests/test_v3.py::test_employee_minimum_is_live",
+  "tests/test_v3.py::test_multiselect",
+  "tests/test_v3.py::test_need_zero",
+  "tests/test_v3.py::test_potential_separate",
+  "tests/test_v3.py::test_score_weights",
+  "tests/test_v3.py::test_unknown_size_errors"
+]

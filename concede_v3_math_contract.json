@@ -1,0 +1,76 @@
+{
+  "motor": {
+    "nombre": "4MSFTS-CONCEDE",
+    "version": "3.0.0"
+  },
+  "perfil": {
+    "modo": "V3",
+    "elegibilidad": {
+      "empleados_minimos": 11
+    },
+    "pesos": {
+      "sector": 35,
+      "tamano": 25,
+      "geografia": 25,
+      "necesidad": 15
+    },
+    "umbrales": {
+      "AAA": 80,
+      "AA": 60
+    },
+    "ticket_promedio_mxn": 69600
+  },
+  "formula": "0.35*S_sector + 0.25*S_tamano + 0.25*S_geografia + 0.15*S_necesidad",
+  "componentes": {
+    "sector": {
+      "match": 100,
+      "no_match": 30,
+      "status": "propuesto_parametrizado"
+    },
+    "tamano": {
+      "scores": {
+        "0-5": 0,
+        "6-10": 40,
+        "11-30": 65,
+        "31-50": 85,
+        "51-100": 100,
+        "101-250": 90,
+        "251+": 75
+      },
+      "status": "bloqueado_como_referencia_inicial"
+    },
+    "geografia": {
+      "neutral": 100,
+      "status": "propuesto_pendiente_rutas"
+    },
+    "necesidad": {
+      "unknown_prospecting_score": 0,
+      "status": "bloqueado_para_compat_v2_pendiente_para_v3"
+    }
+  },
+  "capacidad_propia": {
+    "default_policy": "inform_only",
+    "status": "pendiente_de_decision_comercial"
+  },
+  "pipeline": {
+    "valor_potencial": "N_AAA * ticket",
+    "pipeline_comercial": "solo_oportunidades_validadas",
+    "status": "separado_del_score"
+  },
+  "regression": {
+    "profile": "COMPAT_V2",
+    "raw": 296441,
+    "eligible": 18410,
+    "aaa": 1711,
+    "potential_value_mxn": 119085600
+  },
+  "pending_decisions": [
+    "S_necesidad V3",
+    "politica_capacidad_propia",
+    "geografia_dirigida",
+    "taxonomia_prioridad",
+    "sectores_afines_definitivos",
+    "modelo_de_escenarios",
+    "reconciliacion_1989_vs_1711"
+  ]
+}
