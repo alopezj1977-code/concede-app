@@ -1,4 +1,3 @@
-```python
 import datetime
 from pathlib import Path
 
@@ -242,4 +241,3 @@ st.download_button(
     file_name=f"{run_id}.csv",
     mime="text/csv"
 )
-```
