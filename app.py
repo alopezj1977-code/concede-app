@@ -14,6 +14,7 @@ import plotly.express as px
 import streamlit as st
 
 from core import load_config, run, ConfigError, identify_columns
+from mailing_ui import render_mailing_ui
 
 
 # ============================================================
@@ -468,6 +469,10 @@ if result is None or metrics is None:
         "P0.4 Capacidad Propia es informativo y no modifica score."
     )
 
+    mailing_tab = st.tabs(["📨 Mailing"])[0]
+    with mailing_tab:
+        render_mailing_ui(None, {"run_id": "SIN-CORRIDA"}, CFG)
+
     st.stop()
 
 
@@ -513,12 +518,13 @@ st.caption(
 # TABS EJECUTIVOS
 # ============================================================
 
-tab1, tab2, tab3, tab4 = st.tabs(
+tab1, tab2, tab3, tab4, tab5 = st.tabs(
     [
         "📋 Matriz de Priorización",
         "📊 Gráficos & Dispersión",
         "🧭 Diagnóstico de Madurez",
         "⚙️ Configuración & Diagnóstico",
+        "📨 Mailing",
     ]
 )
 
@@ -819,6 +825,10 @@ with tab4:
 # ============================================================
 
 st.divider()
+
+with tab5:
+    render_mailing_ui(result, metrics, CFG)
+
 
 st.caption(
     f"CONCEDE V3 · Run_ID {metrics['run_id']} · Rule_Version {CFG['motor']['version']} · "
