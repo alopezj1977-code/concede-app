@@ -358,6 +358,18 @@ if execute:
 result = st.session_state.concede_result
 metrics = st.session_state.concede_metrics
 
+# Navegación funcional: cada módulo se muestra de forma independiente.
+if navigation == "Centro de mando":
+    render_command_center(metrics)
+    if result is None or metrics is None:
+        st.info("Carga una base DENUE desde el panel lateral y ejecuta CONCEDE V3 para alimentar los indicadores.")
+    st.stop()
+
+if navigation == "Mailing":
+    render_mailing_ui(result, metrics or {"run_id": "SIN-CORRIDA"}, CFG)
+    st.stop()
+
+
 # El centro de mando solo se renderiza en su módulo de navegación.
 
 # ============================================================
