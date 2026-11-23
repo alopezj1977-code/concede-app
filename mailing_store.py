@@ -45,6 +45,22 @@ MAILING_SCHEMA = (
     )""",
     """CREATE INDEX IF NOT EXISTS ix_mailing_campaigns_workspace
        ON mailing_campaigns(workspace_id, status, updated_at)""",
+    """CREATE TABLE IF NOT EXISTS mailing_enrichment (
+        enrichment_id TEXT PRIMARY KEY,
+        workspace_id TEXT NOT NULL,
+        denue_id TEXT NOT NULL,
+        company TEXT NOT NULL DEFAULT '',
+        email TEXT NOT NULL DEFAULT '',
+        website TEXT NOT NULL DEFAULT '',
+        phone TEXT NOT NULL DEFAULT '',
+        source_url TEXT NOT NULL,
+        source_type TEXT NOT NULL,
+        email_status TEXT NOT NULL,
+        retrieved_at TEXT NOT NULL,
+        UNIQUE(workspace_id, denue_id)
+    )""",
+    """CREATE INDEX IF NOT EXISTS ix_mailing_enrichment_workspace
+       ON mailing_enrichment(workspace_id, email_status)""",
 )
 
 
@@ -160,6 +176,58 @@ def list_contacts(workspace_id, db_path=None):
         for row in rows
     ]
 
+
+def upsert_enrichment_records(workspace_id, records, db_path=None):
+    """Persist DENUE lookup results separately; never mark them campaign-eligible."""
+    workspace = str(workspace_id or "").strip()
+    if not workspace:
+        raise ValueError("workspace_id es obligatorio.")
+    now = _now()
+    statement = """INSERT INTO mailing_enrichment(
+        enrichment_id, workspace_id, denue_id, company, email, website,
+        phone, source_url, source_type, email_status, retrieved_at
+    ) VALUES(?,?,?,?,?,?,?,?,?,?,?)
+    ON CONFLICT(workspace_id, denue_id) DO UPDATE SET
+        company=excluded.company, email=excluded.email, website=excluded.website,
+        phone=excluded.phone, source_url=excluded.source_url,
+        source_type=excluded.source_type, email_status=excluded.email_status,
+        retrieved_at=excluded.retrieved_at"""
+    saved = 0
+    with _connect(db_path) as (con, postgres):
+        for record in records:
+            denue_id = str(record.get("denue_id", "")).strip()
+            if not denue_id:
+                continue
+            con.execute(
+                _sql(statement, postgres),
+                (str(uuid.uuid4()), workspace, denue_id,
+                 str(record.get("empresa", "")).strip(),
+                 str(record.get("correo", "")).strip().lower(),
+                 str(record.get("sitio_web", "")).strip(),
+                 str(record.get("telefono", "")).strip(),
+                 str(record.get("fuente", "")).strip(),
+                 str(record.get("tipo_fuente", "INEGI_DENUE_FICHA")).strip(),
+                 str(record.get("estado_correo", "SIN_CORREO_EN_DENUE")).strip(), now),
+            )
+            saved += 1
+    return saved
+
+
+def list_enrichment_records(workspace_id, db_path=None):
+    with _connect(db_path) as (con, postgres):
+        rows = con.execute(
+            _sql(
+                """SELECT denue_id, company AS empresa, email AS correo,
+                          website AS sitio_web, phone AS telefono,
+                          source_url AS fuente, source_type AS tipo_fuente,
+                          email_status AS estado_correo, retrieved_at AS consultado
+                   FROM mailing_enrichment WHERE workspace_id=?
+                   ORDER BY retrieved_at DESC, company""",
+                postgres,
+            ),
+            (str(workspace_id),),
+        ).fetchall()
+    return [dict(row) for row in rows]
 
 def save_draft(workspace_id, draft, db_path=None):
     workspace = str(workspace_id or "").strip()

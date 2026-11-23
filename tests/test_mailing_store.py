@@ -53,3 +53,30 @@ def test_campaign_draft_lifecycle_is_workspace_scoped(tmp_path):
 
     mark_accepted("workspace-a", "campaign-001", db_path=db)
     assert get_latest_draft("workspace-a", db_path=db) is None
+
+
+def test_denue_enrichment_is_workspace_scoped_and_not_campaign_contact(tmp_path):
+    from mailing_store import list_enrichment_records, upsert_enrichment_records
+
+    db = tmp_path / "mailing.sqlite3"
+    ensure_schema(db)
+    record = {
+        "denue_id": "12345",
+        "empresa": "Empresa DENUE",
+        "correo": "publico@empresa.mx",
+        "sitio_web": "https://empresa.mx",
+        "telefono": "5555555555",
+        "fuente": "https://www.inegi.org.mx/servicios/api-denue/",
+        "tipo_fuente": "INEGI_DENUE_FICHA",
+        "estado_correo": "PUBLICADO_EN_DENUE",
+        "autorizado": False,
+        "apto": False,
+    }
+
+    assert upsert_enrichment_records("workspace-a", [record], db_path=db) == 1
+    saved = list_enrichment_records("workspace-a", db_path=db)
+    assert len(saved) == 1
+    assert saved[0]["correo"] == "publico@empresa.mx"
+    assert saved[0]["estado_correo"] == "PUBLICADO_EN_DENUE"
+    assert list_enrichment_records("workspace-b", db_path=db) == []
+    assert list_contacts("workspace-a", db_path=db) == []

@@ -9,6 +9,7 @@ import pandas as pd
 import streamlit as st
 
 from mailing_auth import render_mail_auth
+from denue_enrichment import DenueEnrichmentError, fetch_denue_ficha
 from mailing_service import (
     APPROVED_SENDER_MAILBOX,
     MailDeliveryError,
@@ -19,9 +20,11 @@ from mailing_store import (
     ensure_schema,
     get_latest_draft,
     list_contacts,
+    list_enrichment_records,
     mark_accepted,
     save_draft,
     upsert_contacts,
+    upsert_enrichment_records,
     validate_campaign_recipients,
 )
 
@@ -151,8 +154,8 @@ def render_mailing_ui(result_df=None, metrics=None, config=None):
     if "concede_mail_draft" not in st.session_state:
         st.session_state["concede_mail_draft"] = None
 
-    contacts_tab, campaign_tab, m365_tab, send_tab = st.tabs(
-        ["Contactos", "Campañas", "Microsoft 365", "Aprobación y envío"]
+    contacts_tab, enrichment_tab, campaign_tab, m365_tab, send_tab = st.tabs(
+        ["Contactos", "Enriquecimiento DENUE", "Campañas", "Microsoft 365", "Aprobación y envío"]
     )
 
     with contacts_tab:
@@ -205,6 +208,106 @@ def render_mailing_ui(result_df=None, metrics=None, config=None):
                 "Los contactos no aptos se conservan para corrección, pero no "
                 "pueden seleccionarse para envío."
             )
+
+    with enrichment_tab:
+        st.markdown("**Localización de correos y canales empresariales desde la ficha oficial DENUE**")
+        st.write(
+            "La consulta recupera únicamente los datos publicados por INEGI: correo, sitio web y teléfono. "
+            "Un correo publicado no se considera autorizado para campañas."
+        )
+        st.caption("Fuente oficial: https://www.inegi.org.mx/servicios/api-denue/")
+        try:
+            denue_section = st.secrets.get("denue", {})
+            denue_token = str(st.secrets.get("DENUE_API_TOKEN", "") or denue_section.get("api_token", "")).strip()
+        except Exception:
+            denue_token = ""
+        if not denue_token:
+            st.warning("Falta configurar el token oficial del INEGI en Streamlit Secrets.")
+            st.code('DENUE_API_TOKEN = "TU_TOKEN_INEGI"', language="toml")
+            st.caption("El token se obtiene en el portal de la API DENUE. No debe compartirse ni guardarse en GitHub.")
+        if not persistent_neon:
+            st.warning("El enriquecimiento queda bloqueado hasta confirmar persistencia Neon activa.")
+        candidate_rows = pd.DataFrame()
+        if isinstance(result_df, pd.DataFrame) and not result_df.empty:
+            candidate_rows = result_df.copy()
+            if "Candidato_Comercial" in candidate_rows.columns:
+                candidate_rows = candidate_rows[candidate_rows["Candidato_Comercial"].fillna(False).astype(bool)]
+            id_col = next((c for c in candidate_rows.columns if str(c).strip().casefold() in {"id", "id_establecimiento"}), None)
+            name_col = next((c for c in candidate_rows.columns if str(c).strip().casefold() in {"nom_estab", "nombre", "empresa"}), None)
+            score_col = "Score_V3" if "Score_V3" in candidate_rows.columns else None
+            if id_col:
+                candidate_rows[id_col] = candidate_rows[id_col].astype(str).str.strip()
+                candidate_rows = candidate_rows[candidate_rows[id_col].str.fullmatch(r"\d+", na=False)]
+                if score_col:
+                    candidate_rows = candidate_rows.sort_values(score_col, ascending=False)
+                candidate_rows = candidate_rows.drop_duplicates(subset=[id_col]).head(100)
+                options = {}
+                for _, row in candidate_rows.iterrows():
+                    label_name = str(row.get(name_col, "Establecimiento")) if name_col else "Establecimiento"
+                    options[f"{label_name} · DENUE {row[id_col]}"] = row[id_col]
+                selected_labels = st.multiselect(
+                    "Selecciona establecimientos para consultar su ficha (máximo 25 por corrida)",
+                    list(options),
+                    key="concede_denue_selected",
+                )
+                if len(selected_labels) > 25:
+                    st.warning("Selecciona como máximo 25 establecimientos por consulta.")
+                if st.button(
+                    "Consultar fichas oficiales INEGI",
+                    type="primary",
+                    disabled=(not denue_token or not persistent_neon or not selected_labels or len(selected_labels) > 25),
+                ):
+                    found = []
+                    failures = []
+                    progress = st.progress(0)
+                    for index, label in enumerate(selected_labels, start=1):
+                        denue_id = options[label]
+                        try:
+                            record = fetch_denue_ficha(denue_id, denue_token)
+                            record["empresa"] = record["empresa"] or label.split(" · DENUE ")[0]
+                            found.append(record)
+                        except DenueEnrichmentError as exc:
+                            failures.append(f"{denue_id}: {exc}")
+                        progress.progress(index / len(selected_labels))
+                    if found:
+                        try:
+                            saved = upsert_enrichment_records(workspace_id, found)
+                            st.success(f"Fichas consultadas y guardadas en Neon: {saved:,}.")
+                        except Exception as exc:
+                            st.error(f"Las consultas se realizaron, pero no se guardaron en Neon: {exc}")
+                    if failures:
+                        st.warning("Consultas con incidencias: " + " · ".join(failures[:10]))
+            else:
+                st.info("La base activa no contiene la columna Id de establecimiento DENUE. No se harán búsquedas por nombre para evitar asociar fichas equivocadas.")
+        else:
+            st.info("Ejecuta primero una corrida con la base DENUE para seleccionar prospectos.")
+        try:
+            enriched = pd.DataFrame(list_enrichment_records(workspace_id)) if persistent_neon else pd.DataFrame()
+        except Exception as exc:
+            enriched = pd.DataFrame()
+            st.error(f"No se pudo consultar el historial de enriquecimiento en Neon: {exc}")
+        if not enriched.empty:
+            st.markdown("**Historial de enriquecimiento**")
+            st.dataframe(enriched, use_container_width=True, hide_index=True)
+            with_email = enriched[enriched["correo"].fillna("").astype(str).str.strip().ne("")].copy()
+            if not with_email.empty:
+                export = pd.DataFrame({
+                    "empresa": with_email["empresa"],
+                    "correo": with_email["correo"],
+                    "contacto": "",
+                    "fuente": with_email["fuente"],
+                    "autorizado": "NO",
+                })
+                st.download_button(
+                    "Exportar correos DENUE para revisión (NO autorizados)",
+                    export.to_csv(index=False).encode("utf-8-sig"),
+                    "concede_correos_denue_revision.csv",
+                    "text/csv",
+                )
+            else:
+                st.info("Las fichas consultadas no contienen correo electrónico publicado. Revisa los sitios web y teléfonos registrados para una gestión posterior.")
+            st.warning("Los correos DENUE se guardan como datos de contacto encontrados, NO como contactos autorizados. El archivo exportado marca autorizado=NO y no habilita envíos.")
+
 
     with campaign_tab:
         contacts = st.session_state["concede_mail_contacts"]
