@@ -358,7 +358,7 @@ if execute:
 result = st.session_state.concede_result
 metrics = st.session_state.concede_metrics
 
-render_command_center(metrics)
+# El centro de mando solo se renderiza en su módulo de navegación.
 
 # ============================================================
 # SIN CORRIDA
