@@ -92,7 +92,7 @@ def render_command_center(metrics=None):
     cards = [
         ("UNIVERSO OBJETIVO","BASE",f"{raw:,}" if has_run else "—","empresas de origen","teal"),
         ("EMPRESAS FILTRADAS","PERFIL",f"{eligible:,}" if has_run else "—","coincidencia comercial","green"),
-        ("LEADS PRIORITARIOS","AAA / AA",f"{leads:,}" if has_run else "—","por atender primero","gold"),
+        ("PRECLASIFICACIÓN","SCORE V3 ≥60",f"{leads:,}" if has_run else "—","bandas matemáticas; no es AAA comercial","gold"),
         ("SEÑALES DETECTADAS","RADAR","EXPEDIENTE","evidencia individual por empresa","red"),
         ("CAMPAÑAS","MAILING","ACTIVACIÓN","envío y seguimiento","teal"),
     ]
@@ -110,7 +110,7 @@ def render_command_center(metrics=None):
     stages=[
         ("Universo identificado",raw,raw,"teal","Base"),
         ("Perfil validado",eligible,raw,"green","Filtro"),
-        ("Prioridad alta",leads,raw,"gold","AAA / AA"),
+        ("Score V3 ≥60",leads,raw,"gold","Score"),
         ("Por validar",int(data.get("validar",0) or 0),raw,"navy","VALIDAR"),
     ]
     for label,value,maximum,color,tag in stages:
@@ -124,9 +124,9 @@ def render_command_center(metrics=None):
         )
     st.markdown(
         '</section><section><div class="cns-panel-title">Atención ejecutiva</div>'
-        '<div class="cns-attention-item"><span></span><p>Empresas con mejor ajuste al perfil objetivo</p></div>'
-        '<div class="cns-attention-item"><span></span><p>Señales que justifican contacto comercial, con evidencia individual</p></div>'
-        '<div class="cns-attention-item"><span></span><p>Campañas listas para revisión, aprobación y medición</p></div>'
-        '</section></div><div class="cns-command-footer">CONSEDE conecta identificación, priorización y contacto en un mismo proceso trazable.</div>',
+        '<div class="cns-attention-item"><span></span><p>Cuentas con mayor ajuste matemático para priorizar su validación</p></div>'
+        '<div class="cns-attention-item"><span></span><p>El interés genuino se confirma después del contacto y debe respaldarse con evidencia objetiva</p></div>'
+        '<div class="cns-attention-item"><span></span><p>Mailing activa el contacto; una banda de Score no convierte por sí sola a una cuenta en AAA comercial</p></div>'
+        '</section></div><div class="cns-command-footer">AAA comercial solo después de contacto, interés genuino y evidencia objetiva. Score V3 es preclasificación, no validación de interés.</div>',
         unsafe_allow_html=True,
     )
