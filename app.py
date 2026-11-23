@@ -459,6 +459,7 @@ tab1, tab2, tab3, tab4 = st.tabs(
 
 with tab1:
     st.markdown("### Matriz de Priorización")
+    st.caption("AAA y AA identifican bandas matemáticas del Score V3. AAA comercial exige contacto, interés genuino del prospecto y evidencia objetiva.")
 
     p_counts = priority_counts(result)
 
