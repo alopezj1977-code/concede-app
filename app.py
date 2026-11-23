@@ -150,6 +150,17 @@ def priority_counts(df):
 # ============================================================
 
 with st.sidebar:
+    st.markdown("## 4MSFTS")
+    st.caption("COMMERCIAL INTELLIGENCE")
+    st.divider()
+    st.markdown("**NAVEGACIÓN**")
+    navigation = st.radio(
+        "Módulo",
+        ["Centro de mando", "Motor de leads", "Mailing"],
+        label_visibility="collapsed",
+        key="concede_main_navigation",
+    )
+    st.divider()
     st.header("🎯 Cliente objetivo")
     cliente_objetivo = st.text_input(
         "Cliente / proyecto",
@@ -419,13 +430,12 @@ st.caption(
 # TABS EJECUTIVOS
 # ============================================================
 
-tab1, tab2, tab3, tab4, tab5 = st.tabs(
+tab1, tab2, tab3, tab4 = st.tabs(
     [
         "📋 Matriz de Priorización",
         "📊 Gráficos & Dispersión",
         "🧭 Diagnóstico de Madurez",
         "⚙️ Configuración & Diagnóstico",
-        "📨 Mailing",
     ]
 )
 
@@ -726,10 +736,6 @@ with tab4:
 # ============================================================
 
 st.divider()
-
-with tab5:
-    render_mailing_ui(result, metrics, CFG)
-
 
 st.caption(
     f"CONCEDE V3 · Run_ID {metrics['run_id']} · Rule_Version {CFG['motor']['version']} · "
