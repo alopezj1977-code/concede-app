@@ -224,7 +224,7 @@ with st.sidebar:
         step=1000.0,
         format="%.0f",
     )
-    st.caption("Pipeline = AAA × ticket. El ticket no modifica el Score V3.")
+    st.caption("Pipeline de referencia = banda superior de Score V3 × ticket; no equivale a pipeline comercial calificado.")
 
     st.divider()
     st.header("🧠 Necesidad")
@@ -390,7 +390,7 @@ if result is None or metrics is None:
     c4.metric("Necesidad", "30%")
 
     st.caption(
-        "Clasificación: AAA 80–100 · AA 60–79.99 · VALIDAR <60. "
+"        "Bandas matemáticas Score V3: AAA 80–100 · AA 60–79.99 · VALIDAR <60. No representan AAA comercial. "
         "P0.4 Capacidad Propia es informativo y no modifica score."
     )
 
@@ -427,8 +427,8 @@ k = st.columns(6)
 k[0].metric("Universo", f"{raw:,}")
 k[1].metric("Target elegible", f"{eligible_count:,}")
 k[2].metric("Candidatos", f"{candidate_count:,}")
-k[3].metric("AAA", f"{aaa:,}")
-k[4].metric("Penetración AAA", pct(penetration))
+k[3].metric("Banda superior · Score", f"{aaa:,}")
+k[4].metric("Penetración banda Score", pct(penetration))
 k[5].metric("Pipeline potencial", money(pipeline))
 
 st.caption(
@@ -463,10 +463,10 @@ with tab1:
     p_counts = priority_counts(result)
 
     c1, c2, c3, c4 = st.columns(4)
-    c1.metric("AAA", f"{p_counts['AAA']:,}")
-    c2.metric("AA", f"{p_counts['AA']:,}")
+    c1.metric("Banda AAA · Score", f"{p_counts['AAA']:,}")
+    c2.metric("Banda AA · Score", f"{p_counts['AA']:,}")
     c3.metric("VALIDAR", f"{p_counts['VALIDAR']:,}")
-    c4.metric("Valor potencial AAA", money(pipeline))
+    c4.metric("Valor potencial · banda Score AAA", money(pipeline))
 
     st.caption(
         "Orden: candidato comercial primero, después Score_V3 descendente. "
@@ -724,8 +724,8 @@ with tab4:
         [
             ["Universo bruto", 296441, "Referencia histórica V2"],
             ["Universo elegible", 18410, "Baseline presentado V2"],
-            ["AAA", 1711, "Baseline presentado V2"],
-            ["Penetración AAA", "9.293862%", "Baseline presentado V2"],
+            ["Banda AAA de Score", 1711, "Baseline presentado V2"],
+            ["Penetración banda Score AAA", "9.293862%", "Baseline presentado V2"],
             ["Ticket", "$69,600", "Baseline presentado V2"],
             ["Pipeline", "$119,085,600", "Baseline presentado V2"],
             ["Sensibilidad ≥80", 391, "Control técnico; NO baseline comercial"],
