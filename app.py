@@ -14,6 +14,8 @@ import plotly.express as px
 import streamlit as st
 
 from core import load_config, run, ConfigError, identify_columns
+from mailing_ui import render_mailing_ui
+from executive_front import apply_executive_theme, render_command_center
 
 
 # ============================================================
@@ -43,86 +45,7 @@ TICKET_DEFAULT = float(CFG["pipeline"]["ticket_promedio_mxn"])
 # ESTILO EJECUTIVO
 # ============================================================
 
-st.markdown(
-    """
-    <style>
-    .block-container {
-        padding-top: 1.35rem;
-        padding-bottom: 2rem;
-        max-width: 1500px;
-    }
-
-    [data-testid="stMetric"] {
-        background: #f4f7fb;
-        border: 1px solid #dce4ef;
-        padding: 12px 14px;
-        border-radius: 12px;
-    }
-
-    .hero {
-        background: linear-gradient(135deg, #0b1f3a 0%, #163a63 100%);
-        color: white;
-        padding: 22px 26px;
-        border-radius: 16px;
-        margin-bottom: 18px;
-    }
-
-    .hero h1 {
-        margin: 0;
-        font-size: 2rem;
-        line-height: 1.15;
-    }
-
-    .hero p {
-        margin: 7px 0 0 0;
-        color: #d9e5f3;
-    }
-
-    .section-title {
-        font-size: 1.15rem;
-        font-weight: 700;
-        margin-top: 0.4rem;
-        margin-bottom: 0.4rem;
-    }
-
-    .small-note {
-        color: #64748b;
-        font-size: 0.86rem;
-    }
-
-    .kpi-note {
-        color: #64748b;
-        font-size: 0.78rem;
-    }
-
-    .status-ok {
-        background: #ecfdf5;
-        border: 1px solid #a7f3d0;
-        padding: 9px 12px;
-        border-radius: 9px;
-        color: #065f46;
-    }
-
-    .status-info {
-        background: #eff6ff;
-        border: 1px solid #bfdbfe;
-        padding: 9px 12px;
-        border-radius: 9px;
-        color: #1e40af;
-    }
-
-    .status-warn {
-        background: #fffbeb;
-        border: 1px solid #fde68a;
-        padding: 9px 12px;
-        border-radius: 9px;
-        color: #92400e;
-    }
-    </style>
-    """,
-    unsafe_allow_html=True,
-)
-
+# Sistema visual corporativo compartido; no interviene en el motor matemático.\napply_executive_theme()\n
 
 # ============================================================
 # FUNCIONES AUXILIARES DE UI
@@ -220,35 +143,24 @@ def priority_counts(df):
 # ENCABEZADO
 # ============================================================
 
-st.markdown(
-    f"""
-    <div class="hero">
-        <h1>CONCEDE | Motor de Generación de Demanda</h1>
-        <p>Motor V3 · UI ejecutiva · {len(ENTIDADES)} entidades · Score / Prioridad / Valor Potencial separados</p>
-    </div>
-    """,
-    unsafe_allow_html=True,
-)
-
-top1, top2, top3 = st.columns([2.2, 1.2, 1.2])
-with top1:
-    st.markdown(
-        '<div class="status-ok"><b>Entorno de Pruebas</b> · Branch motor-v3 · Motor 3.0.0-FINAL</div>',
-        unsafe_allow_html=True,
-    )
-with top2:
-    st.caption("Modo")
-    st.write("**Ejecución V3**")
-with top3:
-    st.caption("Reglas")
-    st.write("**Sin fallbacks silenciosos**")
-
+# El Centro de mando se renderiza con datos reales de la corrida más abajo.\n
 
 # ============================================================
 # SIDEBAR — CONFIGURACIÓN DE CORRIDA
 # ============================================================
 
 with st.sidebar:
+    st.markdown("## 4MSFTS")
+    st.caption("COMMERCIAL INTELLIGENCE")
+    st.divider()
+    st.markdown("**NAVEGACIÓN**")
+    navigation = st.radio(
+        "Módulo",
+        ["Centro de mando", "Motor de leads", "Mailing"],
+        label_visibility="collapsed",
+        key="concede_main_navigation",
+    )
+    st.divider()
     st.header("🎯 Cliente objetivo")
     cliente_objetivo = st.text_input(
         "Cliente / proyecto",
@@ -445,6 +357,7 @@ if execute:
 result = st.session_state.concede_result
 metrics = st.session_state.concede_metrics
 
+render_command_center(metrics)
 
 # ============================================================
 # SIN CORRIDA
@@ -467,6 +380,10 @@ if result is None or metrics is None:
         "Clasificación: AAA 80–100 · AA 60–79.99 · VALIDAR <60. "
         "P0.4 Capacidad Propia es informativo y no modifica score."
     )
+
+    mailing_tab = st.tabs(["📨 Mailing"])[0]
+    with mailing_tab:
+        render_mailing_ui(None, {"run_id": "SIN-CORRIDA"}, CFG)
 
     st.stop()
 
