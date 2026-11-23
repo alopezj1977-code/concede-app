@@ -45,7 +45,8 @@ TICKET_DEFAULT = float(CFG["pipeline"]["ticket_promedio_mxn"])
 # ESTILO EJECUTIVO
 # ============================================================
 
-# Sistema visual corporativo compartido; no interviene en el motor matemático.\napply_executive_theme()\n
+# Sistema visual corporativo compartido; no interviene en el motor matemático.
+apply_executive_theme()
 
 # ============================================================
 # FUNCIONES AUXILIARES DE UI
@@ -143,7 +144,7 @@ def priority_counts(df):
 # ENCABEZADO
 # ============================================================
 
-# El Centro de mando se renderiza con datos reales de la corrida más abajo.\n
+# El Centro de mando se renderiza con datos reales de la corrida más abajo.
 
 # ============================================================
 # SIDEBAR — CONFIGURACIÓN DE CORRIDA
