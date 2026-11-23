@@ -390,7 +390,7 @@ if result is None or metrics is None:
     c4.metric("Necesidad", "30%")
 
     st.caption(
-"        "Bandas matemáticas Score V3: AAA 80–100 · AA 60–79.99 · VALIDAR <60. No representan AAA comercial. "
+        "Bandas matemáticas Score V3: AAA 80–100 · AA 60–79.99 · VALIDAR <60. No representan AAA comercial. "
         "P0.4 Capacidad Propia es informativo y no modifica score."
     )
 
