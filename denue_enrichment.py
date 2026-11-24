@@ -74,7 +74,7 @@ def _request_json(http, url: str):
     # "No hay resultados" or an authentication/parameter message). Preserve
     # that exact diagnostic instead of reducing it to the Python type "str".
     if isinstance(payload, str):
-        detail = re.sub(r"\\s+", " ", payload).strip()[:240]
+        detail = re.sub(r"\s+", " ", payload).strip()[:240]
         token = str(url).rsplit("/", 1)[-1]
         if token and detail:
             detail = detail.replace(token, "[TOKEN REDACTADO]")
