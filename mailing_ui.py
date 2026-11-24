@@ -216,31 +216,83 @@ def render_mailing_ui(result_df=None, metrics=None, config=None):
             "Un correo publicado no se considera autorizado para campañas."
         )
         st.caption("Fuente oficial: https://www.inegi.org.mx/servicios/api-denue/")
+        # Read the token without ever displaying or logging its value. Support
+        # the documented top-level key and the nested [denue] configuration.
+        denue_token = ""
+        denue_token_source = ""
+        denue_secret_error = ""
         try:
-            denue_section = st.secrets.get("denue", {})
-            denue_token = str(st.secrets.get("DENUE_API_TOKEN", "") or denue_section.get("api_token", "")).strip()
-        except Exception:
-            denue_token = ""
-        if not denue_token:
-            st.warning("Falta configurar el token oficial del INEGI en Streamlit Secrets.")
+            secret_values = dict(st.secrets)
+            raw_token = secret_values.get("DENUE_API_TOKEN", "")
+            if raw_token:
+                denue_token = str(raw_token).strip()
+                denue_token_source = "DENUE_API_TOKEN"
+            else:
+                denue_section = secret_values.get("denue", {})
+                if hasattr(denue_section, "get"):
+                    raw_token = denue_section.get("api_token", "") or denue_section.get("token", "")
+                    if raw_token:
+                        denue_token = str(raw_token).strip()
+                        denue_token_source = "[denue].api_token"
+        except Exception as exc:
+            denue_secret_error = type(exc).__name__
+
+        if denue_token:
+            st.success(f"Token DENUE detectado en Secrets ({denue_token_source}). La clave no se muestra.")
+        else:
+            st.warning("La aplicación no detecta DENUE_API_TOKEN en los Secrets del despliegue actual.")
             st.code('DENUE_API_TOKEN = "TU_TOKEN_INEGI"', language="toml")
-            st.caption("El token se obtiene en el portal de la API DENUE. No debe compartirse ni guardarse en GitHub.")
+            st.caption(
+                "Guarda la clave en Settings → Secrets de ESTA aplicación Streamlit y reinicia el despliegue. "
+                "No compartas el token ni lo guardes en GitHub."
+            )
+            if denue_secret_error:
+                st.caption(f"Streamlit no pudo leer Secrets ({denue_secret_error}). Revisa el formato TOML.")
+
         if not persistent_neon:
             st.warning("El enriquecimiento queda bloqueado hasta confirmar persistencia Neon activa.")
         candidate_rows = pd.DataFrame()
         if isinstance(result_df, pd.DataFrame) and not result_df.empty:
+            # Enrichment is a data-acquisition step, not a commercial-score gate.
+            # Keep every row with a real DENUE establishment ID; prioritize
+            # commercial candidates and higher Score V3 without excluding others.
             candidate_rows = result_df.copy()
-            if "Candidato_Comercial" in candidate_rows.columns:
-                candidate_rows = candidate_rows[candidate_rows["Candidato_Comercial"].fillna(False).astype(bool)]
-            id_col = next((c for c in candidate_rows.columns if str(c).strip().casefold() in {"id", "id_establecimiento"}), None)
-            name_col = next((c for c in candidate_rows.columns if str(c).strip().casefold() in {"nom_estab", "nombre", "empresa"}), None)
+            id_col = next(
+                (
+                    c for c in candidate_rows.columns
+                    if str(c).strip().casefold().replace(" ", "_")
+                    in {"id", "id_establecimiento", "id_denue", "denue_id"}
+                ),
+                None,
+            )
+            name_col = next(
+                (
+                    c for c in candidate_rows.columns
+                    if str(c).strip().casefold().replace(" ", "_")
+                    in {"nom_estab", "nombre", "empresa", "nombre_establecimiento"}
+                ),
+                None,
+            )
             score_col = "Score_V3" if "Score_V3" in candidate_rows.columns else None
             if id_col:
                 candidate_rows[id_col] = candidate_rows[id_col].astype(str).str.strip()
                 candidate_rows = candidate_rows[candidate_rows[id_col].str.fullmatch(r"\d+", na=False)]
+                sort_cols = []
+                ascending = []
+                if "Candidato_Comercial" in candidate_rows.columns:
+                    candidate_rows["_prioridad_enriquecimiento"] = candidate_rows["Candidato_Comercial"].fillna(False).astype(bool)
+                    sort_cols.append("_prioridad_enriquecimiento")
+                    ascending.append(False)
                 if score_col:
-                    candidate_rows = candidate_rows.sort_values(score_col, ascending=False)
+                    sort_cols.append(score_col)
+                    ascending.append(False)
+                if sort_cols:
+                    candidate_rows = candidate_rows.sort_values(sort_cols, ascending=ascending)
                 candidate_rows = candidate_rows.drop_duplicates(subset=[id_col]).head(100)
+                st.caption(
+                    f"{len(candidate_rows):,} establecimientos con ID DENUE disponibles. "
+                    "Se priorizan candidatos comerciales y Score V3, sin excluir otros registros."
+                )
                 options = {}
                 for _, row in candidate_rows.iterrows():
                     label_name = str(row.get(name_col, "Establecimiento")) if name_col else "Establecimiento"
