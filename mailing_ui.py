@@ -223,6 +223,7 @@ def render_mailing_ui(result_df=None, metrics=None, config=None):
         denue_secret_error = ""
         secret_key_names = []
         nested_denue_key_names = []
+        nested_mailing_key_names = []
         try:
             secret_values = dict(st.secrets)
             secret_key_names = sorted(str(key) for key in secret_values.keys())
@@ -231,17 +232,27 @@ def render_mailing_ui(result_df=None, metrics=None, config=None):
                 denue_token = str(raw_token).strip()
                 denue_token_source = "DENUE_API_TOKEN"
             else:
-                denue_section = secret_values.get("denue", {})
-                if hasattr(denue_section, "keys"):
-                    nested_denue_key_names = sorted(str(key) for key in denue_section.keys())
-                    raw_token = (
-                        denue_section.get("api_token", "")
-                        or denue_section.get("token", "")
-                        or denue_section.get("DENUE_API_TOKEN", "")
-                    )
-                    if raw_token:
-                        denue_token = str(raw_token).strip()
-                        denue_token_source = "[denue] token"
+                # Support the two nested tables commonly used in this app's
+                # Secrets file. The user's existing token may live under
+                # [mailing] alongside sender_mailbox/client_secret.
+                for section_name in ("denue", "mailing"):
+                    section = secret_values.get(section_name, {})
+                    if hasattr(section, "keys"):
+                        keys = sorted(str(key) for key in section.keys())
+                        if section_name == "denue":
+                            nested_denue_key_names = keys
+                        else:
+                            nested_mailing_key_names = keys
+                        raw_token = (
+                            section.get("DENUE_API_TOKEN", "")
+                            or section.get("denue_api_token", "")
+                            or section.get("api_token", "")
+                            or section.get("token", "")
+                        )
+                        if raw_token:
+                            denue_token = str(raw_token).strip()
+                            denue_token_source = f"[{section_name}] token"
+                            break
         except Exception as exc:
             denue_secret_error = type(exc).__name__
 
@@ -260,6 +271,8 @@ def render_mailing_ui(result_df=None, metrics=None, config=None):
                 st.caption("Claves de Secrets visibles para esta app (solo nombres, nunca valores): " + ", ".join(secret_key_names))
                 if "denue" in secret_values:
                     st.caption("Claves dentro de [denue]: " + (", ".join(nested_denue_key_names) or "ninguna"))
+                if "mailing" in secret_values:
+                    st.caption("Claves dentro de [mailing]: " + (", ".join(nested_mailing_key_names) or "ninguna"))
             else:
                 st.caption("Streamlit devuelve un almacén de Secrets vacío para este despliegue.")
 
