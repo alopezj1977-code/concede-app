@@ -2,9 +2,11 @@ from mailing_store import (
     ensure_schema,
     get_latest_draft,
     list_contacts,
+    list_public_emails,
     mark_accepted,
     save_draft,
     upsert_contacts,
+    upsert_public_emails,
     validate_campaign_recipients,
 )
 
@@ -80,3 +82,23 @@ def test_denue_enrichment_is_workspace_scoped_and_not_campaign_contact(tmp_path)
     assert saved[0]["estado_correo"] == "PUBLICADO_EN_DENUE"
     assert list_enrichment_records("workspace-b", db_path=db) == []
     assert list_contacts("workspace-a", db_path=db) == []
+
+
+
+def test_public_emails_keep_exact_source_and_workspace_scope(tmp_path):
+    db = tmp_path / "mailing.sqlite3"
+    ensure_schema(db)
+    record = {
+        "denue_id": "6420100",
+        "empresa": "AGRIBRANDS PURINA",
+        "correo": "contacto@purina.mx",
+        "fuente": "https://www.purina.mx/contacto",
+        "tipo_fuente": "SITIO_WEB_EMPRESARIAL",
+    }
+
+    assert upsert_public_emails("workspace-a", [record], db_path=db) == 1
+    saved = list_public_emails("workspace-a", db_path=db)
+    assert len(saved) == 1
+    assert saved[0]["correo"] == "contacto@purina.mx"
+    assert saved[0]["fuente"] == "https://www.purina.mx/contacto"
+    assert list_public_emails("workspace-b", db_path=db) == []
