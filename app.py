@@ -28,7 +28,7 @@ CONFIG_PATH = ROOT / "concede_v3.json"
 CFG = load_config(CONFIG_PATH)
 
 st.set_page_config(
-    page_title="CONCEDE | Motor de Generación de Demanda",
+    page_title="CONSEDE | Motor de Generación de Demanda",
     page_icon="🎯",
     layout="wide",
     initial_sidebar_state="expanded",
@@ -265,7 +265,7 @@ with st.sidebar:
     uploaded = st.file_uploader(
         "Carga CSV o Excel",
         type=["csv", "xlsx"],
-        help="CONCEDE V3 procesa únicamente la fuente cargada.",
+        help="CONSEDE V3 procesa únicamente la fuente cargada.",
     )
 
     run_label = st.text_input(
@@ -275,7 +275,7 @@ with st.sidebar:
     )
 
     execute = st.button(
-        "▶ Ejecutar CONCEDE V3",
+        "▶ Ejecutar CONSEDE V3",
         type="primary",
         use_container_width=True,
     )
@@ -362,7 +362,7 @@ metrics = st.session_state.concede_metrics
 if navigation == "Centro de mando":
     render_command_center(metrics)
     if result is None or metrics is None:
-        st.info("Carga una base DENUE desde el panel lateral y ejecuta CONCEDE V3 para alimentar los indicadores.")
+        st.info("Carga una base DENUE desde el panel lateral y ejecuta CONSEDE V3 para alimentar los indicadores.")
     st.stop()
 
 if navigation == "Mailing":
@@ -378,7 +378,7 @@ if navigation == "Mailing":
 
 if result is None or metrics is None:
     st.info(
-        "Carga la base en la barra lateral y presiona **Ejecutar CONCEDE V3**. "
+        "Carga la base en la barra lateral y presiona **Ejecutar CONSEDE V3**. "
         "La interfaz conserva la arquitectura ejecutiva de V2; el cálculo corresponde a V3."
     )
 
@@ -752,6 +752,6 @@ with tab4:
 st.divider()
 
 st.caption(
-    f"CONCEDE V3 · Run_ID {metrics['run_id']} · Rule_Version {CFG['motor']['version']} · "
+    f"CONSEDE V3 · Run_ID {metrics['run_id']} · Rule_Version {CFG['motor']['version']} · "
     "Fuente → evidencia → decisión → cierre."
 )
