@@ -6,6 +6,8 @@ infer consent, scrape third-party websites, or make a contact campaign-eligible.
 from __future__ import annotations
 
 from urllib.parse import quote
+import json
+import re
 
 import requests
 
@@ -30,7 +32,14 @@ def fetch_denue_ficha(establishment_id: str, token: str, *, http=requests):
         f"{quote(token, safe='')}"
     )
     try:
-        response = http.get(url, timeout=20)
+        response = http.get(
+            url,
+            timeout=20,
+            headers={
+                "Accept": "application/json",
+                "User-Agent": "CONCEDE-Motor-V3/1.0 (INEGI DENUE API client)",
+            },
+        )
     except requests.RequestException as exc:
         raise DenueEnrichmentError("No fue posible conectar con la API oficial del INEGI.") from exc
     if response.status_code != 200:
@@ -38,9 +47,24 @@ def fetch_denue_ficha(establishment_id: str, token: str, *, http=requests):
             f"INEGI DENUE respondió HTTP {response.status_code}. Verifica el token y vuelve a intentar."
         )
     try:
-        payload = response.json()
-    except (ValueError, TypeError) as exc:
-        raise DenueEnrichmentError("La API DENUE devolvió una respuesta que no es JSON válido.") from exc
+        try:
+            payload = response.json()
+        except (ValueError, TypeError):
+            raw_body = str(getattr(response, "text", "") or "").lstrip("\\ufeff").strip()
+            payload = json.loads(raw_body)
+    except (ValueError, TypeError, json.JSONDecodeError) as exc:
+        content_type = str(getattr(response, "headers", {}).get("Content-Type", "no informado"))
+        raw_body = str(getattr(response, "text", "") or "").lstrip("\\ufeff").strip()
+        preview = re.sub(r"<[^>]+>", " ", raw_body)
+        preview = re.sub(r"\\s+", " ", preview)[:100]
+        preview = preview.replace(token, "[TOKEN REDACTADO]")
+        if not preview:
+            preview = "cuerpo vacío"
+        raise DenueEnrichmentError(
+            "INEGI respondió HTTP 200, pero el contenido no es JSON. "
+            f"Content-Type: {content_type}. Respuesta: {preview}. "
+            "Esto permite identificar una página HTML/intermediaria o un rechazo del servicio."
+        ) from exc
     if not isinstance(payload, list) or not payload:
         raise DenueEnrichmentError("DENUE no devolvió una ficha para ese establecimiento.")
     record = payload[0]
