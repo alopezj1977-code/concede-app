@@ -115,7 +115,7 @@ def test_empty_ficha_falls_back_to_name_and_verifies_location_without_granting_c
 
     assert len(http.urls) == 2
     assert "/Ficha/12269699/" in http.urls[0]
-    assert "/Nombre/GPS%20GLOBAL%20PACKAGING%20SUPPLIER/00/1/100/" in http.urls[1]
+    assert "/Nombre/GPS%20GLOBAL%20PACKAGING%20SUPPLIER/19/1/100/" in http.urls[1]
     assert result["denue_id"] == "9876543"
     assert result["correo"] == "ventas@example.mx"
     assert result["autorizado"] is False
@@ -193,6 +193,7 @@ def test_name_endpoint_object_error_reports_keys_and_message():
     http = SequenceHTTP([
         [],
         {"error": "token no válido", "codigo": 401},
+        [],
     ])
 
     with pytest.raises(DenueEnrichmentError, match="Claves recibidas: codigo, error"):
@@ -228,7 +229,7 @@ def test_ficha_json_string_message_falls_back_to_name_and_returns_verified_recor
 
     assert len(http.urls) == 2
     assert "/Ficha/6420100/" in http.urls[0]
-    assert "/Nombre/AGRIBRANDS%20PURINA%20MEXICO%20PLANTA%20MONTERREY/00/1/100/" in http.urls[1]
+    assert "/Nombre/AGRIBRANDS%20PURINA%20MEXICO%20PLANTA%20MONTERREY/19/1/100/" in http.urls[1]
     assert result["denue_id"] == "6420100"
     assert result["autorizado"] is False
     assert result["apto"] is False
@@ -236,6 +237,7 @@ def test_ficha_json_string_message_falls_back_to_name_and_returns_verified_recor
 
 def test_name_json_string_message_is_reported_without_exposing_token():
     http = SequenceHTTP([
+        "No hay resultados",
         "No hay resultados",
         "Token no válido: secret-token",
     ])
@@ -256,3 +258,6 @@ def test_name_json_string_message_is_reported_without_exposing_token():
     assert "secret-token" not in message
     assert "[TOKEN REDACTADO]" in message
     assert "No hay resultados" in message
+    assert "BuscarEntidad:" in message
+    assert len(http.urls) == 3
+    assert "/BuscarEntidad/AGRIBRANDS%20PURINA%20MEXICO%20PLANTA%20MONTERREY/19/1/100/" in http.urls[2]
