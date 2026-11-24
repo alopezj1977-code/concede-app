@@ -585,8 +585,8 @@ def render_mailing_ui(result_df=None, metrics=None, config=None):
                     )
                     if blocked or len(allowed) != len(draft["recipients"]):
                         raise MailDeliveryError(
-                            "Envío bloqueado: hay destinatarios sin autorización vigente "
-                            "o que ya no pertenecen a la base apta. Revisa la campaña antes de continuar."
+                            "Envío bloqueado: hay destinatarios que ya no pertenecen a la base apta "
+                            "o cuya fuente dejó de estar disponible. Revisa la campaña antes de continuar."
                         )
                     outcome = send_graph_mail(
                         mail_config,
