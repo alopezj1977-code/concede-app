@@ -163,6 +163,30 @@ def _to_contact(record: dict, requested_id: str = "") -> dict:
     }
 
 
+_ENTITY_CODES = {
+    "aguascalientes": "01", "baja california": "02", "baja california sur": "03",
+    "campeche": "04", "coahuila": "05", "coahuila de zaragoza": "05",
+    "colima": "06", "chiapas": "07", "chihuahua": "08",
+    "ciudad de mexico": "09", "distrito federal": "09",
+    "durango": "10", "guanajuato": "11", "guerrero": "12",
+    "hidalgo": "13", "jalisco": "14", "mexico": "15", "estado de mexico": "15",
+    "michoacan": "16", "michoacan de ocampo": "16", "morelos": "17",
+    "nayarit": "18", "nuevo leon": "19", "oaxaca": "20", "puebla": "21",
+    "queretaro": "22", "queretaro de arteaga": "22", "quintana roo": "23",
+    "san luis potosi": "24", "sinaloa": "25", "sonora": "26",
+    "tabasco": "27", "tamaulipas": "28", "tlaxcala": "29",
+    "veracruz": "30", "veracruz de ignacio de la llave": "30",
+    "yucatan": "31", "zacatecas": "32",
+}
+
+
+def _entity_code(entity: str) -> str:
+    value = str(entity or "").strip()
+    if value.isdigit() and 1 <= int(value) <= 32:
+        return f"{int(value):02d}"
+    return _ENTITY_CODES.get(_normalize(value), "")
+
+
 def fetch_denue_ficha(
     establishment_id: str,
     token: str,
@@ -179,17 +203,19 @@ def fetch_denue_ficha(
     if not token:
         raise DenueEnrichmentError("Falta configurar DENUE_API_TOKEN en Streamlit Secrets.")
 
+    # INEGI documents Ficha/{id}/{token}; the ID precedes the token.
     ficha_url = (
         f"{DENUE_API_BASE}/Ficha/{quote(establishment_id, safe='')}/"
         f"{quote(token, safe='')}"
     )
-    ficha_shape_error = ""
+    ficha_diagnostic = ""
     try:
         payload = _request_json(http, ficha_url)
     except DenueUnexpectedPayload as exc:
-        # A JSON object from Ficha is not automatically a fatal token failure:
-        # retain its diagnostic and attempt the official Nombre lookup.
-        ficha_shape_error = str(exc)
+        # A JSON string/object is an upstream response shape, not proof that
+        # the record does not exist. Keep its literal sanitized diagnostic
+        # and proceed to the official geographic/name fallback.
+        ficha_diagnostic = str(exc)
         payload = []
     if payload:
         record = payload[0]
@@ -197,47 +223,73 @@ def fetch_denue_ficha(
             raise DenueEnrichmentError("El formato de la ficha DENUE no es válido.")
         return _to_contact(record, requested_id=establishment_id)
 
-    # Some source exports contain IDs that are no longer resolvable by Ficha.
-    # Resolve through INEGI's documented Nombre method, then verify name,
-    # state and municipality before accepting a result.
     if not str(establishment_name or "").strip():
-        reason = ficha_shape_error or "DENUE no devolvió ficha por ID."
+        reason = ficha_diagnostic or "DENUE no devolvió ficha por ID."
         raise DenueEnrichmentError(
             reason + " La base tampoco contiene el nombre para realizar la búsqueda alternativa."
         )
-    name_url = (
-        f"{DENUE_API_BASE}/Nombre/{quote(str(establishment_name).strip(), safe='')}/"
-        f"00/1/100/{quote(token, safe='')}"
-    )
-    try:
-        candidates = _request_json(http, name_url)
-    except DenueUnexpectedPayload as exc:
-        prior = f" La consulta Ficha devolvió: {ficha_shape_error}" if ficha_shape_error else ""
+
+    state_code = _entity_code(entity)
+    if not state_code:
+        reason = f" Respuesta de Ficha: {ficha_diagnostic}" if ficha_diagnostic else ""
         raise DenueEnrichmentError(
-            f"La consulta oficial por Nombre también devolvió una respuesta no utilizable: {exc}.{prior}"
-        ) from exc
-    matches = [
-        row for row in candidates
-        if isinstance(row, dict)
-        and _name_matches(establishment_name, row.get("Nombre", ""))
-        and _location_matches(row, entity, municipality)
+            "No se pudo convertir la entidad de la base a la clave oficial INEGI (01–32); "
+            "no se consultó el país completo para evitar falsos positivos." + reason
+        )
+
+    encoded_name = quote(str(establishment_name).strip(), safe="")
+    encoded_token = quote(token, safe="")
+    # Official contracts:
+    # Nombre/{nombre}/{clave_entidad}/{registro_inicial}/{registro_final}/{token}
+    # BuscarEntidad/{condicion}/{clave_entidad}/{registro_inicial}/{registro_final}/{token}
+    fallback_urls = [
+        (
+            "Nombre",
+            f"{DENUE_API_BASE}/Nombre/{encoded_name}/{state_code}/1/100/{encoded_token}",
+        ),
+        (
+            "BuscarEntidad",
+            f"{DENUE_API_BASE}/BuscarEntidad/{encoded_name}/{state_code}/1/100/{encoded_token}",
+        ),
     ]
-    if len(matches) == 1:
-        return _to_contact(matches[0])
-    if len(matches) > 1:
+
+    all_matches = {}
+    fallback_diagnostics = []
+    for method, fallback_url in fallback_urls:
+        try:
+            candidates = _request_json(http, fallback_url)
+        except DenueEnrichmentError as exc:
+            # Includes the literal sanitized text when response.json() is str.
+            fallback_diagnostics.append(f"{method}: {exc}")
+            continue
+
+        for row in candidates:
+            if (
+                isinstance(row, dict)
+                and _name_matches(establishment_name, row.get("Nombre", ""))
+                and _location_matches(row, entity, municipality)
+            ):
+                row_id = str(row.get("Id", "")).strip()
+                if row_id:
+                    all_matches[row_id] = row
+
+        if len(all_matches) == 1:
+            matched = next(iter(all_matches.values()))
+            return _to_contact(matched)
+        # If Nombre did not yield a verified unique match, try BuscarEntidad.
+
+    if len(all_matches) > 1:
         raise DenueEnrichmentError(
-            "La búsqueda por nombre encontró varias fichas con identidad geográfica coincidente. "
-            "Se requiere revisión manual; no se guardó ninguna."
+            "Las búsquedas oficiales por Nombre y BuscarEntidad encontraron varias fichas "
+            "con identidad geográfica coincidente. Se requiere revisión manual; no se guardó ninguna."
         )
-    if candidates and not entity:
-        raise DenueEnrichmentError(
-            "DENUE encontró coincidencias por nombre, pero falta la entidad de la base para verificar la identidad."
-        )
-    reason = (
-        f" La consulta Ficha devolvió: {ficha_shape_error}"
-        if ficha_shape_error else ""
-    )
+
+    details = []
+    if ficha_diagnostic:
+        details.append(f"Ficha: {ficha_diagnostic}")
+    details.extend(fallback_diagnostics)
+    detail_text = " Diagnósticos literales de INEGI: " + " | ".join(details) if details else ""
     raise DenueEnrichmentError(
-        "DENUE no devolvió una coincidencia inequívoca por nombre y ubicación. "
-        "No se guardó ningún dato." + reason
+        "DENUE no devolvió una coincidencia inequívoca por nombre, entidad y municipio. "
+        "No se guardó ningún dato." + detail_text
     )
