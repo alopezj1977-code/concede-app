@@ -10,6 +10,7 @@ import streamlit as st
 
 from mailing_auth import render_mail_auth
 from denue_enrichment import DenueEnrichmentError, fetch_denue_ficha
+from website_contact_enrichment import find_public_business_emails
 from mailing_service import (
     APPROVED_SENDER_MAILBOX,
     MailDeliveryError,
@@ -21,10 +22,12 @@ from mailing_store import (
     get_latest_draft,
     list_contacts,
     list_enrichment_records,
+    list_public_emails,
     mark_accepted,
     save_draft,
     upsert_contacts,
     upsert_enrichment_records,
+    upsert_public_emails,
     validate_campaign_recipients,
 )
 
@@ -94,8 +97,8 @@ def _initialize_store(mail_config):
 def render_mailing_ui(result_df=None, metrics=None, config=None):
     st.markdown("### Mailing · Activación comercial")
     st.caption(
-        "Contactos con autorización documentada, campañas y envío aprobado "
-        "desde Microsoft 365."
+        "Prospección empresarial: localización de correos públicos, trazabilidad y campañas "
+        "revisadas desde Microsoft 365."
     )
 
     if isinstance(result_df, pd.DataFrame) and not result_df.empty:
@@ -111,8 +114,7 @@ def render_mailing_ui(result_df=None, metrics=None, config=None):
                 "text/csv",
             )
         st.caption(
-            "La exportación no acredita consentimiento. Los correos requieren "
-            "fuente y autorización documentadas."
+            "La exportación conserva la fuente de cada registro para revisión comercial y trazabilidad."
         )
 
     mail_config, missing = read_mail_config(st.secrets)
@@ -380,6 +382,16 @@ def render_mailing_ui(result_df=None, metrics=None, config=None):
                                 municipality=source_municipality,
                             )
                             record["empresa"] = record["empresa"] or source_name
+                            public_emails = []
+                            if record.get("correo"):
+                                public_emails.append({
+                                    "correo": record["correo"],
+                                    "fuente": record.get("fuente", "https://www.inegi.org.mx/servicios/api-denue/"),
+                                    "tipo_fuente": "INEGI_DENUE_FICHA",
+                                })
+                            elif record.get("sitio_web"):
+                                public_emails = find_public_business_emails(record["sitio_web"])
+                            record["correos_publicos"] = public_emails
                             found.append(record)
                         except DenueEnrichmentError as exc:
                             failures.append(f"{denue_id}: {exc}")
@@ -387,7 +399,19 @@ def render_mailing_ui(result_df=None, metrics=None, config=None):
                     if found:
                         try:
                             saved = upsert_enrichment_records(workspace_id, found)
-                            st.success(f"Fichas consultadas y guardadas en Neon: {saved:,}.")
+                            email_rows = []
+                            for record in found:
+                                for email_record in record.get("correos_publicos", []):
+                                    email_rows.append({
+                                        **email_record,
+                                        "denue_id": record["denue_id"],
+                                        "empresa": record.get("empresa", ""),
+                                    })
+                            saved_emails = upsert_public_emails(workspace_id, email_rows) if email_rows else 0
+                            st.success(
+                                f"Fichas guardadas en Neon: {saved:,} · "
+                                f"correos públicos localizados: {saved_emails:,}."
+                            )
                         except Exception as exc:
                             st.error(f"Las consultas se realizaron, pero no se guardaron en Neon: {exc}")
                     if failures:
@@ -404,24 +428,20 @@ def render_mailing_ui(result_df=None, metrics=None, config=None):
         if not enriched.empty:
             st.markdown("**Historial de enriquecimiento**")
             st.dataframe(enriched, use_container_width=True, hide_index=True)
-            with_email = enriched[enriched["correo"].fillna("").astype(str).str.strip().ne("")].copy()
-            if not with_email.empty:
-                export = pd.DataFrame({
-                    "empresa": with_email["empresa"],
-                    "correo": with_email["correo"],
-                    "contacto": "",
-                    "fuente": with_email["fuente"],
-                    "autorizado": "NO",
-                })
+            public_emails = pd.DataFrame(list_public_emails(workspace_id)) if persistent_neon else pd.DataFrame()
+            if not public_emails.empty:
+                st.markdown("**Correos empresariales públicos localizados**")
+                st.caption("Cada correo conserva la página exacta donde fue publicado. Revisa la pertinencia del contacto antes de incorporarlo a una campaña.")
+                st.dataframe(public_emails, use_container_width=True, hide_index=True)
                 st.download_button(
-                    "Exportar correos DENUE para revisión (NO autorizados)",
-                    export.to_csv(index=False).encode("utf-8-sig"),
-                    "concede_correos_denue_revision.csv",
+                    "Exportar directorio de correos públicos (CSV)",
+                    public_emails.to_csv(index=False).encode("utf-8-sig"),
+                    "concede_directorio_correos_publicos.csv",
                     "text/csv",
                 )
+                st.caption("La publicación de un correo permite consultarlo y documentar su origen; no sustituye la revisión de las reglas aplicables a cada campaña.")
             else:
-                st.info("Las fichas consultadas no contienen correo electrónico publicado. Revisa los sitios web y teléfonos registrados para una gestión posterior.")
-            st.warning("Los correos DENUE se guardan como datos de contacto encontrados, NO como contactos autorizados. El archivo exportado marca autorizado=NO y no habilita envíos.")
+                st.info("Todavía no hay correos públicos localizados. Al consultar fichas, Mailing revisará también las páginas de contacto de los sitios empresariales disponibles.")
 
 
     with campaign_tab:
