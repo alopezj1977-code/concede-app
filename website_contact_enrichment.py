@@ -50,6 +50,12 @@ def _safe_base_url(value: str) -> str:
     return urlunsplit((parts.scheme, parts.netloc, parts.path or "/", "", ""))
 
 
+def _same_site(left: str, right: str) -> bool:
+    left_host = (urlsplit(left).hostname or "").casefold().removeprefix("www.")
+    right_host = (urlsplit(right).hostname or "").casefold().removeprefix("www.")
+    return bool(left_host and left_host == right_host)
+
+
 def _emails(text: str):
     found = []
     for match in _EMAIL_RE.findall(text or ""):
@@ -66,6 +72,7 @@ def find_public_business_emails(website: str, *, http=requests, max_pages: int =
     if not base:
         return []
     host = urlsplit(base).hostname.casefold()
+    origin = f"{urlsplit(base).scheme}://{urlsplit(base).netloc}"
     queue = [base]
     visited = set()
     results = {}
@@ -86,7 +93,7 @@ def find_public_business_emails(website: str, *, http=requests, max_pages: int =
             continue
         final_url = str(getattr(response, "url", "") or normalized)
         final_parts = urlsplit(final_url)
-        if final_parts.scheme not in {"http", "https"} or (final_parts.hostname or "").casefold() != host:
+        if final_parts.scheme not in {"http", "https"} or not _same_site(final_url, base):
             continue
         if getattr(response, "status_code", 0) != 200:
             continue
@@ -104,10 +111,14 @@ def find_public_business_emails(website: str, *, http=requests, max_pages: int =
         for email in candidates:
             results.setdefault(email, final_url)
         if len(visited) == 1:
+            # Try conventional public contact pages even when the homepage
+            # omits a visible navigation link.
+            for path in ("/contacto", "/contact", "/contact-us", "/contactanos", "/nosotros", "/about"):
+                queue.append(origin + path)
             for href in parser.links:
                 target = urljoin(final_url, href)
                 target_parts = urlsplit(target)
-                if target_parts.scheme not in {"http", "https"} or (target_parts.hostname or "").casefold() != host:
+                if target_parts.scheme not in {"http", "https"} or not _same_site(target, base):
                     continue
                 path = target_parts.path.casefold()
                 if any(hint in path for hint in _CONTACT_HINTS):
