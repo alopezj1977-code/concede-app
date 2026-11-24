@@ -300,6 +300,22 @@ def render_mailing_ui(result_df=None, metrics=None, config=None):
                 ),
                 None,
             )
+            entity_col = next(
+                (
+                    c for c in candidate_rows.columns
+                    if str(c).strip().casefold().replace(" ", "_")
+                    in {"entidad", "estado", "nombre_entidad"}
+                ),
+                None,
+            )
+            municipality_col = next(
+                (
+                    c for c in candidate_rows.columns
+                    if str(c).strip().casefold().replace(" ", "_")
+                    in {"municipio", "nombre_municipio"}
+                ),
+                None,
+            )
             score_col = "Score_V3" if "Score_V3" in candidate_rows.columns else None
             if id_col:
                 candidate_rows[id_col] = candidate_rows[id_col].astype(str).str.strip()
@@ -341,9 +357,25 @@ def render_mailing_ui(result_df=None, metrics=None, config=None):
                     progress = st.progress(0)
                     for index, label in enumerate(selected_labels, start=1):
                         denue_id = options[label]
+                        source_row = candidate_rows.loc[candidate_rows[id_col].eq(denue_id)].iloc[0]
+                        source_name = (
+                            str(source_row.get(name_col, "")).strip() if name_col else label.split(" · DENUE ")[0]
+                        )
+                        source_entity = (
+                            str(source_row.get(entity_col, "")).strip() if entity_col else ""
+                        )
+                        source_municipality = (
+                            str(source_row.get(municipality_col, "")).strip() if municipality_col else ""
+                        )
                         try:
-                            record = fetch_denue_ficha(denue_id, denue_token)
-                            record["empresa"] = record["empresa"] or label.split(" · DENUE ")[0]
+                            record = fetch_denue_ficha(
+                                denue_id,
+                                denue_token,
+                                establishment_name=source_name,
+                                entity=source_entity,
+                                municipality=source_municipality,
+                            )
+                            record["empresa"] = record["empresa"] or source_name
                             found.append(record)
                         except DenueEnrichmentError as exc:
                             failures.append(f"{denue_id}: {exc}")
