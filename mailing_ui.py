@@ -443,7 +443,7 @@ def render_mailing_ui(result_df=None, metrics=None, config=None):
                     prospects = []
                     for row in public_emails.to_dict("records"):
                         email = str(row.get("correo", "")).strip().lower()
-                        valid = bool(re.fullmatch(r"[^\\s@]+@[^\\s@]+\\.[^\\s@]+", email))
+                        valid = bool(re.fullmatch(r"[^\s@]+@[^\s@]+\.[^\s@]+", email))
                         if valid:
                             prospects.append({
                                 "empresa": row.get("empresa", ""),
