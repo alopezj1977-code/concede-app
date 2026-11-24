@@ -108,7 +108,7 @@ def render_mailing_ui(result_df=None, metrics=None, config=None):
         st.metric("Candidatos comerciales en la corrida activa", f"{len(candidates):,}")
         if not candidates.empty:
             st.download_button(
-                "Exportar candidatos de CONCEDE (CSV)",
+                "Exportar candidatos de CONSEDE (CSV)",
                 candidates.to_csv(index=False).encode("utf-8-sig"),
                 "concede_candidatos_para_activacion.csv",
                 "text/csv",
@@ -483,7 +483,7 @@ def render_mailing_ui(result_df=None, metrics=None, config=None):
             selected = st.multiselect("Destinatarios", list(options), key="concede_mail_selected")
             campaign_name = st.text_input(
                 "Nombre de campaña",
-                "CONCEDE · Activación comercial",
+                "CONSEDE · Activación comercial",
                 key="concede_mail_campaign_name",
             )
             subject = st.text_input("Asunto", key="concede_mail_subject")
