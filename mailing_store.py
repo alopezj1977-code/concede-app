@@ -61,6 +61,19 @@ MAILING_SCHEMA = (
     )""",
     """CREATE INDEX IF NOT EXISTS ix_mailing_enrichment_workspace
        ON mailing_enrichment(workspace_id, email_status)""",
+    """CREATE TABLE IF NOT EXISTS mailing_public_emails (
+        public_email_id TEXT PRIMARY KEY,
+        workspace_id TEXT NOT NULL,
+        denue_id TEXT NOT NULL,
+        company TEXT NOT NULL DEFAULT '',
+        email TEXT NOT NULL,
+        source_url TEXT NOT NULL,
+        source_type TEXT NOT NULL,
+        retrieved_at TEXT NOT NULL,
+        UNIQUE(workspace_id, denue_id, email)
+    )""",
+    """CREATE INDEX IF NOT EXISTS ix_mailing_public_emails_workspace
+       ON mailing_public_emails(workspace_id, company)""",
 )
 
 
@@ -228,6 +241,54 @@ def list_enrichment_records(workspace_id, db_path=None):
             (str(workspace_id),),
         ).fetchall()
     return [dict(row) for row in rows]
+
+
+def upsert_public_emails(workspace_id, records, db_path=None):
+    """Persist publicly listed business emails with the exact page URL found."""
+    workspace = str(workspace_id or "").strip()
+    if not workspace:
+        raise ValueError("workspace_id es obligatorio.")
+    now = _now()
+    statement = """INSERT INTO mailing_public_emails(
+        public_email_id, workspace_id, denue_id, company, email,
+        source_url, source_type, retrieved_at
+    ) VALUES(?,?,?,?,?,?,?,?)
+    ON CONFLICT(workspace_id, denue_id, email) DO UPDATE SET
+        company=excluded.company, source_url=excluded.source_url,
+        source_type=excluded.source_type, retrieved_at=excluded.retrieved_at"""
+    saved = 0
+    with _connect(db_path) as (con, postgres):
+        for record in records:
+            email = str(record.get("correo", "")).strip().lower()
+            denue_id = str(record.get("denue_id", "")).strip()
+            source_url = str(record.get("fuente", "")).strip()
+            if not email or not denue_id or not source_url:
+                continue
+            con.execute(
+                _sql(statement, postgres),
+                (str(uuid.uuid4()), workspace, denue_id,
+                 str(record.get("empresa", "")).strip(), email, source_url,
+                 str(record.get("tipo_fuente", "SITIO_WEB_EMPRESARIAL")).strip(), now),
+            )
+            saved += 1
+    return saved
+
+
+def list_public_emails(workspace_id, db_path=None):
+    with _connect(db_path) as (con, postgres):
+        rows = con.execute(
+            _sql(
+                """SELECT denue_id, company AS empresa, email AS correo,
+                          source_url AS fuente, source_type AS tipo_fuente,
+                          retrieved_at AS consultado
+                   FROM mailing_public_emails WHERE workspace_id=?
+                   ORDER BY company, email""",
+                postgres,
+            ),
+            (str(workspace_id),),
+        ).fetchall()
+    return [dict(row) for row in rows]
+
 
 def save_draft(workspace_id, draft, db_path=None):
     workspace = str(workspace_id or "").strip()
