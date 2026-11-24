@@ -70,6 +70,21 @@ def _request_json(http, url: str):
             f"Content-Type: {content_type}. Respuesta: {preview}. "
             "Esto permite identificar una página HTML/intermediaria o un rechazo del servicio."
         ) from exc
+    # INEGI may return a JSON-encoded string for service errors (for example,
+    # "No hay resultados" or an authentication/parameter message). Preserve
+    # that exact diagnostic instead of reducing it to the Python type "str".
+    if isinstance(payload, str):
+        detail = re.sub(r"\s+", " ", payload).strip()[:240]
+        token = str(url).rsplit("/", 1)[-1]
+        if token and detail:
+            detail = detail.replace(token, "[TOKEN REDACTADO]")
+        if not detail:
+            detail = "cadena vacía"
+        raise DenueUnexpectedPayload(
+            "INEGI respondió HTTP 200 con una cadena JSON, no con una lista. "
+            f"Texto devuelto por INEGI: {detail}"
+        )
+
     # The documented API returns arrays. Some intermediary/error responses are
     # JSON objects; unwrap only known list envelopes or a clearly identifiable
     # single establishment. Never treat an arbitrary error object as a record.
@@ -194,7 +209,13 @@ def fetch_denue_ficha(
         f"{DENUE_API_BASE}/Nombre/{quote(str(establishment_name).strip(), safe='')}/"
         f"00/1/100/{quote(token, safe='')}"
     )
-    candidates = _request_json(http, name_url)
+    try:
+        candidates = _request_json(http, name_url)
+    except DenueUnexpectedPayload as exc:
+        prior = f" La consulta Ficha devolvió: {ficha_shape_error}" if ficha_shape_error else ""
+        raise DenueEnrichmentError(
+            f"La consulta oficial por Nombre también devolvió una respuesta no utilizable: {exc}.{prior}"
+        ) from exc
     matches = [
         row for row in candidates
         if isinstance(row, dict)

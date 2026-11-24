@@ -204,3 +204,55 @@ def test_name_endpoint_object_error_reports_keys_and_message():
             municipality="Guadalupe",
             http=http,
         )
+
+
+
+def test_ficha_json_string_message_falls_back_to_name_and_returns_verified_record():
+    ficha_message = "No hay resultados"
+    name_result = [{
+        "Id": "6420100",
+        "Nombre": "AGRIBRANDS PURINA MEXICO PLANTA MONTERREY",
+        "Correo_e": "contacto@example.mx",
+        "Ubicacion": "MONTERREY, NUEVO LEÓN, NUEVO LEÓN",
+    }]
+    http = SequenceHTTP([ficha_message, name_result])
+
+    result = fetch_denue_ficha(
+        "6420100",
+        "secret-token",
+        establishment_name="AGRIBRANDS PURINA MEXICO PLANTA MONTERREY",
+        entity="Nuevo León",
+        municipality="Monterrey",
+        http=http,
+    )
+
+    assert len(http.urls) == 2
+    assert "/Ficha/6420100/" in http.urls[0]
+    assert "/Nombre/AGRIBRANDS%20PURINA%20MEXICO%20PLANTA%20MONTERREY/00/1/100/" in http.urls[1]
+    assert result["denue_id"] == "6420100"
+    assert result["autorizado"] is False
+    assert result["apto"] is False
+
+
+def test_name_json_string_message_is_reported_without_exposing_token():
+    http = SequenceHTTP([
+        "No hay resultados",
+        "Token no válido: secret-token",
+    ])
+
+    with pytest.raises(DenueEnrichmentError) as exc:
+        fetch_denue_ficha(
+            "6420100",
+            "secret-token",
+            establishment_name="AGRIBRANDS PURINA MEXICO PLANTA MONTERREY",
+            entity="Nuevo León",
+            municipality="Monterrey",
+            http=http,
+        )
+
+    message = str(exc.value)
+    assert "cadena JSON" in message
+    assert "Token no válido" in message
+    assert "secret-token" not in message
+    assert "[TOKEN REDACTADO]" in message
+    assert "No hay resultados" in message
