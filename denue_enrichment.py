@@ -85,7 +85,7 @@ def _request_json(http, url: str):
         for key in ("mensaje", "message", "error", "Message", "Error", "descripcion"):
             value = payload.get(key)
             if isinstance(value, (str, int, float)) and str(value).strip():
-                detail = re.sub(r"\\s+", " ", str(value)).strip()[:180]
+                detail = re.sub(r"\s+", " ", str(value)).strip()[:180]
                 break
         suffix = f" Detalle informado por INEGI: {detail}" if detail else ""
         raise DenueUnexpectedPayload(
