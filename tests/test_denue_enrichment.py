@@ -131,6 +131,7 @@ def test_name_fallback_rejects_a_different_state():
             "Ubicacion": "GUADALAJARA, JALISCO, JALISCO",
             "Correo_e": "ventas@example.mx",
         }],
+        [],
     ])
 
     with pytest.raises(DenueEnrichmentError, match="coincidencia inequívoca"):
