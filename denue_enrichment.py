@@ -23,6 +23,10 @@ class DenueEnrichmentError(RuntimeError):
     """Safe-to-display DENUE lookup error."""
 
 
+class DenueUnexpectedPayload(DenueEnrichmentError):
+    """INEGI returned valid JSON, but not the documented record/list shape."""
+
+
 def _normalize(value: str) -> str:
     value = unicodedata.normalize("NFKD", str(value or ""))
     value = "".join(ch for ch in value if not unicodedata.combining(ch))
@@ -66,8 +70,32 @@ def _request_json(http, url: str):
             f"Content-Type: {content_type}. Respuesta: {preview}. "
             "Esto permite identificar una página HTML/intermediaria o un rechazo del servicio."
         ) from exc
+    # The documented API returns arrays. Some intermediary/error responses are
+    # JSON objects; unwrap only known list envelopes or a clearly identifiable
+    # single establishment. Never treat an arbitrary error object as a record.
+    if isinstance(payload, dict):
+        for key in ("datos", "data", "results", "resultados", "establecimientos", "records"):
+            nested = payload.get(key)
+            if isinstance(nested, list):
+                return nested
+        if payload.get("Id") and payload.get("Nombre"):
+            return [payload]
+        keys = ", ".join(sorted(str(key) for key in payload.keys())[:12]) or "sin claves"
+        detail = ""
+        for key in ("mensaje", "message", "error", "Message", "Error", "descripcion"):
+            value = payload.get(key)
+            if isinstance(value, (str, int, float)) and str(value).strip():
+                detail = re.sub(r"\s+", " ", str(value)).strip()[:180]
+                break
+        suffix = f" Detalle informado por INEGI: {detail}" if detail else ""
+        raise DenueUnexpectedPayload(
+            "INEGI respondió JSON tipo objeto, no la lista documentada. "
+            f"Claves recibidas: {keys}.{suffix}"
+        )
     if not isinstance(payload, list):
-        raise DenueEnrichmentError("INEGI devolvió una estructura inesperada; se esperaba una lista.")
+        raise DenueUnexpectedPayload(
+            f"INEGI devolvió JSON de tipo {type(payload).__name__}; se esperaba una lista."
+        )
     return payload
 
 
@@ -140,7 +168,14 @@ def fetch_denue_ficha(
         f"{DENUE_API_BASE}/Ficha/{quote(establishment_id, safe='')}/"
         f"{quote(token, safe='')}"
     )
-    payload = _request_json(http, ficha_url)
+    ficha_shape_error = ""
+    try:
+        payload = _request_json(http, ficha_url)
+    except DenueUnexpectedPayload as exc:
+        # A JSON object from Ficha is not automatically a fatal token failure:
+        # retain its diagnostic and attempt the official Nombre lookup.
+        ficha_shape_error = str(exc)
+        payload = []
     if payload:
         record = payload[0]
         if not isinstance(record, dict):
@@ -151,8 +186,9 @@ def fetch_denue_ficha(
     # Resolve through INEGI's documented Nombre method, then verify name,
     # state and municipality before accepting a result.
     if not str(establishment_name or "").strip():
+        reason = ficha_shape_error or "DENUE no devolvió ficha por ID."
         raise DenueEnrichmentError(
-            "DENUE no devolvió ficha por ID y la base no contiene el nombre para buscarla."
+            reason + " La base tampoco contiene el nombre para realizar la búsqueda alternativa."
         )
     name_url = (
         f"{DENUE_API_BASE}/Nombre/{quote(str(establishment_name).strip(), safe='')}/"
@@ -176,7 +212,11 @@ def fetch_denue_ficha(
         raise DenueEnrichmentError(
             "DENUE encontró coincidencias por nombre, pero falta la entidad de la base para verificar la identidad."
         )
+    reason = (
+        f" La consulta Ficha devolvió: {ficha_shape_error}"
+        if ficha_shape_error else ""
+    )
     raise DenueEnrichmentError(
-        "DENUE no devolvió ficha por ID ni una coincidencia inequívoca por nombre y ubicación. "
-        "No se guardó ningún dato."
+        "DENUE no devolvió una coincidencia inequívoca por nombre y ubicación. "
+        "No se guardó ningún dato." + reason
     )

@@ -142,3 +142,65 @@ def test_name_fallback_rejects_a_different_state():
             municipality="Guadalupe",
             http=http,
         )
+
+
+
+def test_ficha_json_error_object_triggers_verified_name_fallback():
+    ficha_error = {"error": "registro no disponible", "codigo": 404}
+    name_result = [{
+        "Id": "9876543",
+        "Nombre": "GPS GLOBAL PACKAGING SUPPLIER",
+        "Razon_social": "GPS GLOBAL PACKAGING SUPPLIER SA DE CV",
+        "Correo_e": "ventas@example.mx",
+        "Ubicacion": "GUADALUPE, NUEVO LEÓN, NUEVO LEÓN",
+    }]
+    http = SequenceHTTP([ficha_error, name_result])
+
+    result = fetch_denue_ficha(
+        "12269699",
+        "secret-token",
+        establishment_name="GPS GLOBAL PACKAGING SUPPLIER",
+        entity="Nuevo León",
+        municipality="Guadalupe",
+        http=http,
+    )
+
+    assert len(http.urls) == 2
+    assert "/Ficha/12269699/" in http.urls[0]
+    assert "/Nombre/GPS%20GLOBAL%20PACKAGING%20SUPPLIER/" in http.urls[1]
+    assert result["denue_id"] == "9876543"
+    assert result["autorizado"] is False
+    assert result["apto"] is False
+
+
+def test_ficha_accepts_a_single_official_record_object():
+    http = FakeHTTP({
+        "Id": "12345",
+        "Nombre": "EMPRESA PRUEBA",
+        "Ubicacion": "GUADALUPE, NUEVO LEÓN",
+        "Correo_e": "contacto@empresa.mx",
+    })
+
+    result = fetch_denue_ficha("12345", "secret-token", http=http)
+
+    assert result["denue_id"] == "12345"
+    assert result["correo"] == "contacto@empresa.mx"
+    assert result["autorizado"] is False
+    assert result["apto"] is False
+
+
+def test_name_endpoint_object_error_reports_keys_and_message():
+    http = SequenceHTTP([
+        [],
+        {"error": "token no válido", "codigo": 401},
+    ])
+
+    with pytest.raises(DenueEnrichmentError, match="Claves recibidas: codigo, error"):
+        fetch_denue_ficha(
+            "12269699",
+            "secret-token",
+            establishment_name="GPS GLOBAL PACKAGING SUPPLIER",
+            entity="Nuevo León",
+            municipality="Guadalupe",
+            http=http,
+        )
