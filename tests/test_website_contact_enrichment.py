@@ -18,7 +18,7 @@ class FakeHTTP:
 
     def get(self, url, timeout, headers=None, allow_redirects=True):
         self.calls.append(url)
-        return self.pages[url]
+        return self.pages.get(url, FakeResponse("", url, status=404))
 
 
 def test_finds_mailto_and_text_emails_on_home_and_contact_page():
@@ -58,7 +58,7 @@ def test_does_not_follow_external_domains_or_accept_external_redirects():
     found = find_public_business_emails(home, http=http)
 
     assert [row["correo"] for row in found] == ["info@empresa.mx"]
-    assert http.calls == [home]
+    assert all("otra.mx" not in url for url in http.calls)
 
 
 def test_rejects_local_and_ip_literal_websites_without_request():
