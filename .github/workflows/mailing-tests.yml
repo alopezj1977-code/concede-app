@@ -6,6 +6,7 @@ on:
       - motor-v3
       - feature/mailing-motor-v3
       - feature/denue-contact-enrichment
+      - 'fix/**'
   pull_request:
     branches:
       - motor-v3
