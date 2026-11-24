@@ -111,10 +111,7 @@ def find_public_business_emails(website: str, *, http=requests, max_pages: int =
         for email in candidates:
             results.setdefault(email, final_url)
         if len(visited) == 1:
-            # Try conventional public contact pages even when the homepage
-            # omits a visible navigation link.
-            for path in ("/contacto", "/contact", "/contact-us", "/contactanos", "/nosotros", "/about"):
-                queue.append(origin + path)
+            # Follow the site's own contact links first.
             for href in parser.links:
                 target = urljoin(final_url, href)
                 target_parts = urlsplit(target)
@@ -123,6 +120,9 @@ def find_public_business_emails(website: str, *, http=requests, max_pages: int =
                 path = target_parts.path.casefold()
                 if any(hint in path for hint in _CONTACT_HINTS):
                     queue.append(urlunsplit((target_parts.scheme, target_parts.netloc, target_parts.path, "", "")))
+            # Also try conventional paths when no useful navigation link exists.
+            for path in ("/contacto", "/contact", "/contact-us", "/contactanos", "/nosotros", "/about"):
+                queue.append(origin + path)
     return [
         {"correo": email, "fuente": source, "tipo_fuente": "SITIO_WEB_EMPRESARIAL"}
         for email, source in results.items()
