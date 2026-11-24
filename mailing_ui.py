@@ -161,11 +161,11 @@ def render_mailing_ui(result_df=None, metrics=None, config=None):
     )
 
     with contacts_tab:
-        st.markdown("**Base compartida de contactos autorizados**")
+        st.markdown("**Base compartida de contactos y prospectos**")
         st.write(
-            "CSV requerido: empresa, correo, contacto, fuente y autorizado. "
-            "Solo correos válidos con fuente y autorización afirmativa pueden "
-            "entrar a una campaña."
+            "Importa contactos propios o incorpora prospectos con correo empresarial "
+            "publicado y fuente verificable. La selección para campaña requiere revisión "
+            "del responsable y aprobación expresa del envío."
         )
         sample = pd.DataFrame([{
             "empresa": "Empresa ejemplo",
@@ -202,7 +202,7 @@ def render_mailing_ui(result_df=None, metrics=None, config=None):
         contacts = st.session_state["concede_mail_contacts"]
         if not contacts.empty:
             st.dataframe(
-                contacts[_CONTACT_COLUMNS],
+                contacts[["empresa", "correo", "contacto", "fuente", "correo_valido", "apto"]],
                 use_container_width=True,
                 hide_index=True,
             )
@@ -439,7 +439,30 @@ def render_mailing_ui(result_df=None, metrics=None, config=None):
                     "concede_directorio_correos_publicos.csv",
                     "text/csv",
                 )
-                st.caption("La publicación de un correo permite consultarlo y documentar su origen; no sustituye la revisión de las reglas aplicables a cada campaña.")
+                if st.button("Incorporar correos públicos a la base de prospección", type="primary", disabled=not persistent_neon):
+                    prospects = []
+                    for row in public_emails.to_dict("records"):
+                        email = str(row.get("correo", "")).strip().lower()
+                        valid = bool(re.fullmatch(r"[^\\s@]+@[^\\s@]+\\.[^\\s@]+", email))
+                        if valid:
+                            prospects.append({
+                                "empresa": row.get("empresa", ""),
+                                "correo": email,
+                                "contacto": "",
+                                "fuente": row.get("fuente", ""),
+                                "autorizado": False,
+                                "correo_valido": True,
+                                "apto": True,
+                            })
+                    if prospects:
+                        saved_contacts = upsert_contacts(workspace_id, prospects)
+                        st.session_state["concede_mail_contacts"] = pd.DataFrame(
+                            list_contacts(workspace_id), columns=_CONTACT_COLUMNS
+                        )
+                        st.success(f"Prospectos incorporados a la base: {saved_contacts:,}. Ya pueden seleccionarse para preparar una campaña.")
+                    else:
+                        st.info("No hay correos válidos para incorporar.")
+                st.caption("La publicación permite consultar y documentar el correo. La incorporación es una decisión manual; revisa pertinencia, exclusiones y reglas aplicables antes de aprobar cualquier campaña.")
             else:
                 st.info("Todavía no hay correos públicos localizados. Al consultar fichas, Mailing revisará también las páginas de contacto de los sitios empresariales disponibles.")
 
@@ -448,8 +471,8 @@ def render_mailing_ui(result_df=None, metrics=None, config=None):
         contacts = st.session_state["concede_mail_contacts"]
         if contacts.empty or not contacts["apto"].any():
             st.info(
-                "Primero importa contactos con correo válido, fuente y autorización "
-                "documentada."
+                "Primero importa contactos o incorpora prospectos desde el directorio "
+                "de correos empresariales públicos."
             )
         else:
             eligible = contacts[contacts["apto"]]
