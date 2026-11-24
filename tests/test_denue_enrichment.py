@@ -75,3 +75,70 @@ def test_ficha_reports_http_200_html_response_without_leaking_token():
         fetch_denue_ficha("12345", "secret-token", http=http)
     assert "secret-token" not in str(http.text)
     assert http.called_headers["Accept"] == "application/json"
+
+
+class SequenceHTTP:
+    def __init__(self, payloads):
+        self.payloads = list(payloads)
+        self.urls = []
+
+    def get(self, url, timeout, headers=None):
+        self.urls.append(url)
+        payload = self.payloads.pop(0)
+        return SimpleNamespace(
+            status_code=200,
+            text="",
+            headers={"Content-Type": "application/json"},
+            json=lambda: payload,
+        )
+
+
+def test_empty_ficha_falls_back_to_name_and_verifies_location_without_granting_consent():
+    ficha = []
+    search = [{
+        "Id": "9876543",
+        "Nombre": "GPS GLOBAL PACKAGING SUPPLIER",
+        "Razon_social": "GPS GLOBAL PACKAGING SUPPLIER SA DE CV",
+        "Correo_e": "ventas@example.mx",
+        "Ubicacion": "GUADALUPE, Nuevo León, NUEVO LEÓN",
+    }]
+    http = SequenceHTTP([ficha, search])
+
+    result = fetch_denue_ficha(
+        "12269699",
+        "secret-token",
+        establishment_name="GPS GLOBAL PACKAGING SUPPLIER",
+        entity="Nuevo León",
+        municipality="Guadalupe",
+        http=http,
+    )
+
+    assert len(http.urls) == 2
+    assert "/Ficha/12269699/" in http.urls[0]
+    assert "/Nombre/GPS%20GLOBAL%20PACKAGING%20SUPPLIER/00/1/100/" in http.urls[1]
+    assert result["denue_id"] == "9876543"
+    assert result["correo"] == "ventas@example.mx"
+    assert result["autorizado"] is False
+    assert result["apto"] is False
+
+
+def test_name_fallback_rejects_a_different_state():
+    http = SequenceHTTP([
+        [],
+        [{
+            "Id": "9876543",
+            "Nombre": "GPS GLOBAL PACKAGING SUPPLIER",
+            "Ubicacion": "GUADALAJARA, JALISCO, JALISCO",
+            "Correo_e": "ventas@example.mx",
+        }],
+    ])
+
+    with pytest.raises(DenueEnrichmentError, match="coincidencia inequívoca"):
+        fetch_denue_ficha(
+            "12269699",
+            "secret-token",
+            establishment_name="GPS GLOBAL PACKAGING SUPPLIER",
+            entity="Nuevo León",
+            municipality="Guadalupe",
+            http=http,
+        )
