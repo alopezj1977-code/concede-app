@@ -50,13 +50,13 @@ def fetch_denue_ficha(establishment_id: str, token: str, *, http=requests):
         try:
             payload = response.json()
         except (ValueError, TypeError):
-            raw_body = str(getattr(response, "text", "") or "").lstrip("\\ufeff").strip()
+            raw_body = str(getattr(response, "text", "") or "").lstrip("\ufeff").strip()
             payload = json.loads(raw_body)
     except (ValueError, TypeError, json.JSONDecodeError) as exc:
         content_type = str(getattr(response, "headers", {}).get("Content-Type", "no informado"))
-        raw_body = str(getattr(response, "text", "") or "").lstrip("\\ufeff").strip()
+        raw_body = str(getattr(response, "text", "") or "").lstrip("\ufeff").strip()
         preview = re.sub(r"<[^>]+>", " ", raw_body)
-        preview = re.sub(r"\\s+", " ", preview)[:100]
+        preview = re.sub(r"\s+", " ", preview)[:100]
         preview = preview.replace(token, "[TOKEN REDACTADO]")
         if not preview:
             preview = "cuerpo vacío"
