@@ -216,14 +216,16 @@ def render_mailing_ui(result_df=None, metrics=None, config=None):
             "Un correo publicado no se considera autorizado para campañas."
         )
         st.caption("Fuente oficial: https://www.inegi.org.mx/servicios/api-denue/")
-        # Read the token without ever displaying or logging its value. Support
-        # the documented top-level key and the nested [denue] configuration.
+        # DENUE and the INEGI Indicators API are distinct services. Never
+        # reuse a generic [mailing].token: it may belong to another INEGI API.
+        # Accept only an explicitly named top-level or [denue] secret.
         denue_token = ""
         denue_token_source = ""
         denue_secret_error = ""
         secret_key_names = []
         nested_denue_key_names = []
         nested_mailing_key_names = []
+        mailing_generic_token_present = False
         try:
             secret_values = dict(st.secrets)
             secret_key_names = sorted(str(key) for key in secret_values.keys())
@@ -232,37 +234,41 @@ def render_mailing_ui(result_df=None, metrics=None, config=None):
                 denue_token = str(raw_token).strip()
                 denue_token_source = "DENUE_API_TOKEN"
             else:
-                # Support the two nested tables commonly used in this app's
-                # Secrets file. The user's existing token may live under
-                # [mailing] alongside sender_mailbox/client_secret.
-                for section_name in ("denue", "mailing"):
-                    section = secret_values.get(section_name, {})
-                    if hasattr(section, "keys"):
-                        keys = sorted(str(key) for key in section.keys())
-                        if section_name == "denue":
-                            nested_denue_key_names = keys
-                        else:
-                            nested_mailing_key_names = keys
-                        raw_token = (
-                            section.get("DENUE_API_TOKEN", "")
-                            or section.get("denue_api_token", "")
-                            or section.get("api_token", "")
-                            or section.get("token", "")
-                        )
-                        if raw_token:
-                            denue_token = str(raw_token).strip()
-                            denue_token_source = f"[{section_name}] token"
-                            break
+                section = secret_values.get("denue", {})
+                if hasattr(section, "keys"):
+                    nested_denue_key_names = sorted(str(key) for key in section.keys())
+                    raw_token = (
+                        section.get("DENUE_API_TOKEN", "")
+                        or section.get("denue_api_token", "")
+                        or section.get("api_token", "")
+                        or section.get("token", "")
+                    )
+                    if raw_token:
+                        denue_token = str(raw_token).strip()
+                        denue_token_source = "[denue] token"
+                mailing_section = secret_values.get("mailing", {})
+                if hasattr(mailing_section, "keys"):
+                    nested_mailing_key_names = sorted(str(key) for key in mailing_section.keys())
+                    mailing_generic_token_present = bool(mailing_section.get("token", ""))
         except Exception as exc:
             denue_secret_error = type(exc).__name__
 
         if denue_token:
-            st.success(f"Token DENUE detectado en Secrets ({denue_token_source}). La clave no se muestra.")
+            st.success(f"Token DENUE configurado en Secrets ({denue_token_source}). La clave no se muestra.")
+        elif mailing_generic_token_present:
+            st.error(
+                "Se detectó [mailing].token, pero no se utilizará para DENUE: "
+                "puede pertenecer a otra API de INEGI. Configura una clave específica "
+                "en DENUE_API_TOKEN o en [denue].api_token."
+            )
         else:
-            st.warning("La aplicación no detecta DENUE_API_TOKEN en los Secrets del despliegue actual.")
-            st.code('DENUE_API_TOKEN = "TU_TOKEN_INEGI"', language="toml")
+            st.warning(
+                "Falta una clave específica para la API DENUE. Configura "
+                "DENUE_API_TOKEN o [denue].api_token en los Secrets de esta aplicación."
+            )
+            st.code('DENUE_API_TOKEN = "TOKEN_ESPECIFICO_DENUE"', language="toml")
             st.caption(
-                "Guarda la clave en Settings → Secrets de ESTA aplicación Streamlit y reinicia el despliegue. "
+                "Usa una clave emitida para la API DENUE; no reutilices la clave de la API de Indicadores. "
                 "No compartas el token ni lo guardes en GitHub."
             )
             if denue_secret_error:
@@ -273,8 +279,6 @@ def render_mailing_ui(result_df=None, metrics=None, config=None):
                     st.caption("Claves dentro de [denue]: " + (", ".join(nested_denue_key_names) or "ninguna"))
                 if "mailing" in secret_values:
                     st.caption("Claves dentro de [mailing]: " + (", ".join(nested_mailing_key_names) or "ninguna"))
-            else:
-                st.caption("Streamlit devuelve un almacén de Secrets vacío para este despliegue.")
 
         if not persistent_neon:
             st.warning("El enriquecimiento queda bloqueado hasta confirmar persistencia Neon activa.")
