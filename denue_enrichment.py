@@ -75,7 +75,7 @@ def _name_matches(expected: str, actual: str) -> bool:
     left, right = _normalize(expected), _normalize(actual)
     if not left or not right:
         return False
-    if left == right or left in right or right in left:
+    if left == right:
         return True
     left_tokens, right_tokens = set(left.split()), set(right.split())
     overlap = len(left_tokens & right_tokens) / max(1, min(len(left_tokens), len(right_tokens)))
