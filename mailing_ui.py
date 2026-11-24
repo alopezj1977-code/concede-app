@@ -214,8 +214,8 @@ def render_mailing_ui(result_df=None, metrics=None, config=None):
     with enrichment_tab:
         st.markdown("**Localización de correos y canales empresariales desde la ficha oficial DENUE**")
         st.write(
-            "La consulta recupera únicamente los datos publicados por INEGI: correo, sitio web y teléfono. "
-            "Un correo publicado no se considera autorizado para campañas."
+            "La consulta recupera los datos empresariales publicados por INEGI. Si la ficha no contiene correo, "
+            "Mailing revisa el sitio oficial y guarda cada correo localizado con su URL de origen."
         )
         st.caption("Fuente oficial: https://www.inegi.org.mx/servicios/api-denue/")
         # DENUE and the INEGI Indicators API are distinct services. Never
