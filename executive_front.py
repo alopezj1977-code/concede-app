@@ -20,7 +20,51 @@ def apply_executive_theme():
         .block-container{max-width:1540px;padding-top:2rem;padding-bottom:2.7rem}
         [data-testid="stSidebar"],[data-testid="stSidebar"]>div:first-child{background:var(--cns-navy);border-right:1px solid #29485c}
         [data-testid="stSidebar"] *{color:#e6eef3}
-        [data-testid="stSidebar"] label,[data-testid="stSidebar"] .stCaption{color:#a9bdca!important}
+        [data-testid="stSidebar"] label,[data-testid="stSidebar"] .stCaption{color:#c4d3dc!important}
+
+        /* Sidebar form controls: dark, readable values on light input surfaces. */
+        [data-testid="stSidebar"] [data-testid="stTextInput"] input,
+        [data-testid="stSidebar"] [data-testid="stNumberInput"] input,
+        [data-testid="stSidebar"] [data-testid="stTextArea"] textarea,
+        [data-testid="stSidebar"] [data-baseweb="input"] input,
+        [data-testid="stSidebar"] [data-baseweb="textarea"] textarea,
+        [data-testid="stSidebar"] [data-baseweb="select"] input{
+          color:#172f42!important;
+          -webkit-text-fill-color:#172f42!important;
+          caret-color:#12b5a5!important;
+          background-color:#ffffff!important;
+          opacity:1!important;
+        }
+        [data-testid="stSidebar"] [data-testid="stTextInput"] input::placeholder,
+        [data-testid="stSidebar"] [data-testid="stNumberInput"] input::placeholder,
+        [data-testid="stSidebar"] [data-testid="stTextArea"] textarea::placeholder,
+        [data-testid="stSidebar"] [data-baseweb="input"] input::placeholder,
+        [data-testid="stSidebar"] [data-baseweb="textarea"] textarea::placeholder{
+          color:#71879a!important;
+          -webkit-text-fill-color:#71879a!important;
+          opacity:1!important;
+        }
+        [data-testid="stSidebar"] [data-testid="stNumberInput"] button{
+          color:#29485c!important;
+          background:#edf3f6!important;
+          border-color:#cbd8df!important;
+        }
+        [data-testid="stSidebar"] [data-testid="stNumberInput"] button svg{
+          fill:#29485c!important;
+          color:#29485c!important;
+        }
+        [data-testid="stSidebar"] [data-baseweb="select"]>div{
+          background:#ffffff!important;
+          border-color:#cbd8df!important;
+        }
+        [data-testid="stSidebar"] [data-testid="stMultiSelect"] [data-baseweb="tag"]{
+          background:#dce9ef!important;
+        }
+        [data-testid="stSidebar"] [data-testid="stMultiSelect"] [data-baseweb="tag"] *,
+        [data-testid="stSidebar"] [data-testid="stSelectbox"] [data-baseweb="select"] *{
+          color:#172f42!important;
+          -webkit-text-fill-color:#172f42!important;
+        }
         h1,h2,h3,h4{color:var(--cns-ink)!important;letter-spacing:-.025em}
         h1{font-size:2.25rem!important;font-weight:760!important}
         h2{font-size:1.45rem!important;font-weight:720!important}
